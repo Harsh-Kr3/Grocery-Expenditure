@@ -13,7 +13,6 @@
       background-color: transparent;
       user-select: none;
     }
-    /* Total Meal Summary Card */
     .summary-card {
       background: linear-gradient(135deg, #0b57d0, #1d4ed8);
       color: #ffffff;
@@ -61,8 +60,6 @@
       color: #ffffff;
       font-weight: 700;
     }
-
-    /* Table styles */
     .table-container {
       width: 100%;
       overflow-x: auto;
@@ -205,7 +202,6 @@
 </head>
 <body>
 
-  <!-- Top Total Meal Box -->
   <div class="summary-card">
     <div>
       <div class="total-title">Total Meals (Sum of Largest Values)</div>
@@ -251,9 +247,8 @@
     let DAYS = [];
     let MEALS = [];
     let isTableBuilt = false;
-    let hasUserModified = false; // Tracks if user has made local edits
+    let hasUserModified = false;
 
-    // Scrapes the current DOM values cleanly
     function collectCurrentRecordsFromDOM() {
       const updated = [];
       const tbody = document.getElementById("chartBody");
@@ -341,7 +336,6 @@
       flashStatus();
     }
 
-    // Build the DOM strictly once
     function buildTableStructure() {
       const theadTr = document.getElementById("headerRow");
       theadTr.innerHTML = '<th class="day-header" colspan="2">Day</th>';
@@ -359,7 +353,6 @@
         MEALS.forEach((meal, mealIdx) => {
           const tr = document.createElement("tr");
 
-          // Merged Member Name Cell
           if (mealIdx === 0) {
             const tdMember = document.createElement("td");
             tdMember.className = "member-td";
@@ -380,13 +373,11 @@
             tr.appendChild(tdMember);
           }
 
-          // Meal Cell
           const tdMeal = document.createElement("td");
           tdMeal.className = "meal-td";
           tdMeal.innerText = meal;
           tr.appendChild(tdMeal);
 
-          // Day input cells
           DAYS.forEach(day => {
             const td = document.createElement("td");
             const input = document.createElement("input");
@@ -397,13 +388,11 @@
                                ? record.meals[meal][day] : "";
             input.value = initialVal;
 
-            // Live editing: recalculate summary immediately, mark as modified, NEVER auto-revert
             input.addEventListener("input", () => {
               hasUserModified = true;
               calculateTotalMeals();
             });
 
-            // Enter key navigation without page jumps
             input.addEventListener("keydown", (e) => {
               if (e.key === "Enter") {
                 input.blur();
@@ -417,7 +406,6 @@
           tbody.appendChild(tr);
         });
 
-        // Blue Gap Divider
         const gapTr = document.createElement("tr");
         gapTr.className = "gap-row";
         const gapTd = document.createElement("td");
@@ -430,16 +418,12 @@
       calculateTotalMeals();
     }
 
-    // Only update values from backend if the user hasn't started typing in this session
     function updateValuesInDOM() {
       if (!isTableBuilt) {
         buildTableStructure();
         return;
       }
-      if (hasUserModified) {
-        // User has active edits in progress: protect their work, DO NOT overwrite DOM
-        return;
-      }
+      if (hasUserModified) return;
 
       records.forEach((record, memberIdx) => {
         const nameInput = document.getElementById(`member_name_${memberIdx}`);
@@ -473,10 +457,9 @@
       }
     });
 
-    // Save Changes explicitly syncs all values to Python and disk
     document.getElementById("saveBtn").addEventListener("click", () => {
       persist();
-      hasUserModified = false; // reset edit flag after saving
+      hasUserModified = false;
     });
 
     window.parent.postMessage({
