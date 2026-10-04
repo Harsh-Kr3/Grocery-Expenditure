@@ -1,11 +1,11 @@
 import os
 import sys
 import json
+import sqlite3
 from datetime import date
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-import database as db
 
 # ----------------- PAGE CONFIG -----------------
 st.set_page_config(
@@ -14,39 +14,117 @@ st.set_page_config(
     layout="wide"
 )
 
-# ----------------- DATABASE INITIALIZATION -----------------
-db.init_db()
-
-# ----------------- SAFE COMPONENT PATH RESOLUTION -----------------
-current_dir = os.path.dirname(os.path.abspath(__file__))
-
-# Check for lowercase 'frontend' first, then capitalized 'Frontend'
-component_path = os.path.join(current_dir, "frontend")
-if not os.path.exists(component_path):
-    component_path = os.path.join(current_dir, "Frontend")
-
-if not os.path.exists(component_path) or not os.path.exists(os.path.join(component_path, "index.html")):
-    st.error(
-        f"🚨 **Component folder missing:** Could not locate `frontend/index.html` at: `{component_path}`.\n\n"
-        "Please ensure your `frontend` directory with `index.html` is tracked and pushed to your GitHub repository."
-    )
-    st.stop()
-
-mess_chart_editor = components.declare_component("mess_chart_editor", path=component_path)
-
-# ----------------- CONSTANTS & GLOBALS -----------------
+# ----------------- DATABASE SETUP -----------------
+DB_FILE = "mess_data.db"
+TOTAL_MEMBERS = 6
 DAYS = [str(i) for i in range(1, 32)]
 MEALS = ["Nasta", "Lunch", "Dinner"]
-TOTAL_MEMBERS = 6
 
+def get_connection():
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS members (
+                slot_id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS meal_records (
+                slot_id INTEGER,
+                meal_type TEXT,
+                day TEXT,
+                val TEXT,
+                PRIMARY KEY (slot_id, meal_type, day)
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS purchases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                item TEXT NOT NULL,
+                buyer TEXT NOT NULL,
+                amount REAL NOT NULL
+            )
+        """)
+        cursor.execute("SELECT COUNT(*) as count FROM members")
+        if cursor.fetchone()["count"] == 0:
+            for i in range(TOTAL_MEMBERS):
+                cursor.execute("INSERT INTO members (slot_id, name) VALUES (?, ?)", (i, ""))
+                for m in MEALS:
+                    for d in DAYS:
+                        cursor.execute(
+                            "INSERT INTO meal_records (slot_id, meal_type, day, val) VALUES (?, ?, ?, ?)",
+                            (i, m, d, "x" if m == "Nasta" else "")
+                        )
+        conn.commit()
+
+def load_meal_records():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT slot_id, name FROM members ORDER BY slot_id ASC")
+        members = cursor.fetchall()
+        records = []
+        for m in members:
+            slot_id = m["slot_id"]
+            cursor.execute("SELECT meal_type, day, val FROM meal_records WHERE slot_id = ?", (slot_id,))
+            meals_rows = cursor.fetchall()
+            meals_dict = {meal: {d: ("x" if meal == "Nasta" else "") for d in DAYS} for meal in MEALS}
+            for row in meals_rows:
+                meals_dict[row["meal_type"]][row["day"]] = row["val"]
+            records.append({"name": m["name"], "meals": meals_dict})
+        return records
+
+def save_meal_records(records):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        for slot_id, rec in enumerate(records[:TOTAL_MEMBERS]):
+            name = rec.get("name", "").strip()
+            cursor.execute("UPDATE members SET name = ? WHERE slot_id = ?", (name, slot_id))
+            meals = rec.get("meals", {})
+            for meal in MEALS:
+                day_dict = meals.get(meal, {})
+                for d in DAYS:
+                    val = str(day_dict.get(d, ""))
+                    cursor.execute("""
+                        INSERT INTO meal_records (slot_id, meal_type, day, val)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(slot_id, meal_type, day) DO UPDATE SET val = excluded.val
+                    """, (slot_id, meal, d, val))
+        conn.commit()
+
+def load_purchases():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, date, item, buyer, amount FROM purchases ORDER BY id ASC")
+        return [dict(r) for r in cursor.fetchall()]
+
+def add_purchase(date_str, item, buyer, amount):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO purchases (date, item, buyer, amount) VALUES (?, ?, ?, ?)",
+            (date_str, item, buyer, float(amount))
+        )
+        conn.commit()
+
+def delete_last_purchase():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM purchases WHERE id = (SELECT MAX(id) FROM purchases)")
+        conn.commit()
+
+init_db()
+
+# ----------------- CALCULATION HELPER -----------------
 def calculate_member_meals(records):
-    """
-    Computes each member's maximum meal count and total mess meals.
-    'x' or empty strings are treated as 0.
-    """
     member_meals = {}
     total_meals = 0.0
-
     for idx, rec in enumerate(records):
         name = rec.get("name", "").strip() or f"Member {idx + 1}"
         m_max = 0.0
@@ -69,23 +147,19 @@ def calculate_member_meals(records):
                             pass
         member_meals[name] = m_max
         total_meals += m_max
-
     return total_meals, member_meals
 
 # ----------------- SESSION STATE -----------------
 if "records" not in st.session_state:
-    st.session_state.records = db.load_meal_records()
+    st.session_state.records = load_meal_records()
 
 if "current_view" not in st.session_state:
     st.session_state.current_view = "HOME"
 
-# --------------------------------------------------
-# 1. HOME VIEW
-# --------------------------------------------------
+# ----------------- NAVIGATION -----------------
 if st.session_state.current_view == "HOME":
-    st.markdown("<h1 style='text-align: center; margin-top: 25px;'>🍽️ Hostel Mess Management</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: gray;'>Select a section below to get started</p>", unsafe_allow_html=True)
-    st.write("")
+    st.markdown("<h1 style='text-align: center; margin-top: 30px;'>🍽️ Hostel Mess Management</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: gray;'>Select an option to proceed</p>", unsafe_allow_html=True)
     st.write("")
     
     col1, col2 = st.columns(2)
@@ -93,66 +167,92 @@ if st.session_state.current_view == "HOME":
         if st.button("📋 MESS MEAL CHART", use_container_width=True, type="primary"):
             st.session_state.current_view = "MEAL_CHART"
             st.rerun()
-
     with col2:
         if st.button("💰 MESS EXPENDITURE", use_container_width=True):
             st.session_state.current_view = "EXPENDITURE"
             st.rerun()
 
-# --------------------------------------------------
-# 2. MESS MEAL CHART VIEW
-# --------------------------------------------------
+# ----------------- VIEW 1: MEAL CHART -----------------
 elif st.session_state.current_view == "MEAL_CHART":
-    top_col1, top_col2 = st.columns([1, 8])
-    with top_col1:
+    top1, top2 = st.columns([1, 8])
+    with top1:
         if st.button("⬅️ Back"):
             st.session_state.current_view = "HOME"
             st.rerun()
-    with top_col2:
-        st.subheader("📋 Mess Meal Chart (Days 1 - 31)")
+    with top2:
+        st.subheader("📋 Mess Meal Chart (1 - 31)")
 
-    # Render table component
-    updated_records = mess_chart_editor(
-        records=st.session_state.records,
-        days=DAYS,
-        meals=MEALS,
-        key="mess_table_editor_main"
-    )
+    # Form editor using native Streamlit inputs for reliability on cloud
+    with st.expander("✏️ Quick Name Editor (Assign Member Names)", expanded=False):
+        name_cols = st.columns(3)
+        updated_names = False
+        for idx in range(TOTAL_MEMBERS):
+            current_name = st.session_state.records[idx].get("name", "")
+            new_name = name_cols[idx % 3].text_input(f"Slot {idx + 1} Name", value=current_name, key=f"slot_name_{idx}")
+            if new_name != current_name:
+                st.session_state.records[idx]["name"] = new_name
+                updated_names = True
+        if updated_names:
+            save_meal_records(st.session_state.records)
+            st.rerun()
 
-    if updated_records is not None and updated_records != st.session_state.records:
-        st.session_state.records = updated_records
-        db.save_meal_records(updated_records)
-        st.toast("Saved directly to Database!", icon="💾")
+    # Member selection for table filling
+    member_names = [r.get("name", "").strip() or f"Member {i+1}" for i, r in enumerate(st.session_state.records)]
+    selected_member_name = st.selectbox("Select Member to View / Edit Meals:", member_names)
+    selected_idx = member_names.index(selected_member_name)
 
-# --------------------------------------------------
-# 3. MESS EXPENDITURE VIEW
-# --------------------------------------------------
+    rec = st.session_state.records[selected_idx]
+    
+    # Render interactive data editor for the selected member
+    chart_data = {
+        "Meal": ["Nasta", "Lunch", "Dinner"]
+    }
+    for d in DAYS:
+        chart_data[d] = [
+            rec["meals"]["Nasta"].get(d, "x"),
+            rec["meals"]["Lunch"].get(d, ""),
+            rec["meals"]["Dinner"].get(d, "")
+        ]
+
+    df_member_chart = pd.DataFrame(chart_data)
+    edited_df = st.data_editor(df_member_chart, use_container_width=True, hide_index=True)
+
+    if st.button("💾 Save Meal Entries for " + selected_member_name, type="primary"):
+        for d in DAYS:
+            st.session_state.records[selected_idx]["meals"]["Nasta"][d] = str(edited_df.loc[0, d])
+            st.session_state.records[selected_idx]["meals"]["Lunch"][d] = str(edited_df.loc[1, d])
+            st.session_state.records[selected_idx]["meals"]["Dinner"][d] = str(edited_df.loc[2, d])
+        save_meal_records(st.session_state.records)
+        st.toast("Saved successfully!", icon="✅")
+        st.rerun()
+
+    st.divider()
+    total_meals, member_meals = calculate_member_meals(st.session_state.records)
+    st.metric("Total Meals Counted (Sum of Max Entries)", f"{total_meals:.1f}")
+
+# ----------------- VIEW 2: EXPENDITURE -----------------
 elif st.session_state.current_view == "EXPENDITURE":
-    top_col1, top_col2 = st.columns([1, 8])
-    with top_col1:
+    top1, top2 = st.columns([1, 8])
+    with top1:
         if st.button("⬅️ Back"):
             st.session_state.current_view = "HOME"
             st.rerun()
-    with top_col2:
+    with top2:
         st.subheader("💰 Mess Expenditure & Member Settlements")
 
-    purchases = db.load_purchases()
+    purchases = load_purchases()
     total_meals, member_meals = calculate_member_meals(st.session_state.records)
     active_members = list(member_meals.keys())
 
-    # Overall Metrics
     total_spent = sum(float(p.get("amount", 0.0)) for p in purchases)
     per_meal_rate = (total_spent / total_meals) if total_meals > 0 else 0.0
 
-    # Top KPI summary
     m1, m2, m3 = st.columns(3)
     m1.metric("💵 Total Mess Expenditure", f"₹{total_spent:,.2f}")
     m2.metric("🍲 Total Meals Eaten", f"{total_meals:.1f}")
     m3.metric("📈 Per-Meal Rate", f"₹{per_meal_rate:.2f}")
 
     st.divider()
-
-    # Subtop Member Overview Table
     st.markdown("### 📊 Member Summary & Settlement Overview")
     st.caption("Formula: **Net Balance = Total Grocery Bought - (Meals Eaten × Per-Meal Rate)**")
 
@@ -189,33 +289,26 @@ elif st.session_state.current_view == "EXPENDITURE":
 
     st.write("")
 
-    # Add Purchase Form
     with st.expander("➕ Add New Purchase / Expense", expanded=False):
         with st.form("purchase_form", clear_on_submit=True):
             col_d, col_item, col_buyer, col_amt = st.columns([2, 4, 3, 2])
-            
             with col_d:
                 p_date = st.date_input("Date", value=date.today())
             with col_item:
-                p_item = st.text_input("Item Name", placeholder="e.g. Vegetables, Chicken, Masala, Oil")
+                p_item = st.text_input("Item Name", placeholder="e.g. Rice, Chicken, Veggies")
             with col_buyer:
                 p_buyer = st.selectbox("Purchased By", active_members)
             with col_amt:
-                p_amount = st.number_input("Amount (₹)", min_value=0.0, step=10.0, value=0.0)
+                p_amount = st.number_input("Amount (₹)", min_value=0.0, step=10.0)
 
             submitted = st.form_submit_button("Record Purchase Entry", use_container_width=True, type="primary")
-            if submitted:
-                if p_amount > 0 and p_item.strip():
-                    db.add_purchase(p_date.strftime("%Y-%m-%d"), p_item.strip(), p_buyer, p_amount)
-                    st.success(f"Saved: {p_item.strip()} (₹{p_amount:.2f}) paid by {p_buyer}")
-                    st.rerun()
-                else:
-                    st.error("Please enter a valid item name and amount.")
+            if submitted and p_amount > 0 and p_item.strip():
+                add_purchase(p_date.strftime("%Y-%m-%d"), p_item.strip(), p_buyer, p_amount)
+                st.success(f"Recorded: {p_item.strip()} (₹{p_amount:.2f})")
+                st.rerun()
 
     st.divider()
-
-    # Individual Member Logs / Columns
-    st.markdown("### 📑 Individual Member Purchase Logs & Statements")
+    st.markdown("### 📑 Individual Member Purchase Logs")
     member_tabs = st.tabs(active_members)
 
     for i, member in enumerate(active_members):
@@ -233,29 +326,15 @@ elif st.session_state.current_view == "EXPENDITURE":
             status_label = "Refund" if m_net >= 0 else "Due to Pay"
             c4.metric(f"Balance ({status_label})", f"₹{abs(m_net):,.2f}")
 
-            st.write(f"#### Expense Log for {member}")
             if m_items:
                 df_m = pd.DataFrame(m_items)[["date", "item", "amount"]].rename(
                     columns={"date": "Date", "item": "Item Name", "amount": "Amount (₹)"}
                 )
                 st.dataframe(df_m, use_container_width=True, hide_index=True)
             else:
-                st.info(f"No grocery purchases recorded for {member} yet.")
+                st.info(f"No purchases logged for {member}.")
 
-    st.write("")
-    col_del, col_csv = st.columns([2, 2])
-    with col_del:
-        if purchases and st.button("🗑️ Delete Most Recent Purchase"):
-            db.delete_last_purchase()
+    if purchases:
+        if st.button("🗑️ Delete Most Recent Purchase"):
+            delete_last_purchase()
             st.rerun()
-
-    with col_csv:
-        if purchases:
-            csv_data = pd.DataFrame(purchases).to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Export Full Purchase Log (CSV)",
-                data=csv_data,
-                file_name="mess_purchases.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
