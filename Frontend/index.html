@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    body {
+      margin: 0;
+      padding: 10px;
+      background-color: transparent;
+      user-select: none;
+    }
+    /* Total Meal Summary Card */
+    .summary-card {
+      background: linear-gradient(135deg, #0b57d0, #1d4ed8);
+      color: #ffffff;
+      border-radius: 8px;
+      padding: 12px 18px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 6px -1px rgba(11, 87, 208, 0.25);
+    }
+    .total-title {
+      font-size: 13px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #bfdbfe;
+    }
+    .total-val {
+      font-size: 26px;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.1;
+    }
+    .breakdown-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.12);
+      padding: 6px 12px;
+      border-radius: 6px;
+      max-height: 60px;
+      overflow-y: auto;
+    }
+    .breakdown-item {
+      display: inline-flex;
+      gap: 4px;
+    }
+    .breakdown-name {
+      color: #bfdbfe;
+      font-weight: 500;
+    }
+    .breakdown-num {
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    /* Table styles */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      border: 1.5px solid #084298;
+      border-radius: 6px;
+      background: #ffffff;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 12px;
+      text-align: center;
+    }
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 0;
+      height: 30px;
+    }
+    .day-header {
+      background-color: #0b57d0;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 13px;
+      width: 190px;
+      position: sticky;
+      left: 0;
+      z-index: 2;
+    }
+    .date-th {
+      background-color: #2e7d32;
+      color: #ffffff;
+      font-weight: 600;
+      min-width: 34px;
+      max-width: 38px;
+      padding: 4px 0;
+    }
+    .member-td {
+      background-color: #0b57d0;
+      color: #ffffff;
+      font-weight: bold;
+      font-size: 14px;
+      vertical-align: middle;
+      width: 110px;
+      min-width: 110px;
+      border: 1px solid #084298;
+      position: sticky;
+      left: 0;
+      z-index: 1;
+    }
+    .member-input {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      color: #ffffff;
+      border: none;
+      outline: none;
+      font-size: 13px;
+      font-weight: bold;
+      text-align: center;
+      user-select: text;
+    }
+    .member-input::placeholder {
+      color: #bfdbfe;
+      font-style: italic;
+      font-weight: normal;
+    }
+    .member-input:focus {
+      background: #1d4ed8;
+    }
+    .meal-td {
+      background-color: #1a73e8;
+      color: #ffffff;
+      font-weight: 600;
+      font-size: 12px;
+      width: 80px;
+      min-width: 80px;
+      border: 1px solid #084298;
+      position: sticky;
+      left: 110px;
+      z-index: 1;
+    }
+    input.cell-input {
+      width: 100%;
+      height: 100%;
+      border: none;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 500;
+      background: #ffffff;
+      color: #0f172a;
+      outline: none;
+      padding: 2px;
+      cursor: text;
+      user-select: text;
+    }
+    input.cell-input:focus {
+      background-color: #fef08a !important;
+      box-shadow: inset 0 0 0 2px #2563eb;
+    }
+    tr.gap-row td {
+      background-color: #0b57d0;
+      height: 10px;
+      border: none;
+    }
+    .toolbar {
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .save-button {
+      background-color: #2563eb;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      padding: 9px 24px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .save-button:hover {
+      background-color: #1d4ed8;
+    }
+    .status-msg {
+      color: #16a34a;
+      font-weight: 600;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    .status-msg.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Total Meal Box -->
+  <div class="summary-card">
+    <div>
+      <div class="total-title">Total Meals (Sum of Largest Values)</div>
+      <div class="total-val" id="totalMealDisplay">0</div>
+    </div>
+    <div class="breakdown-list" id="memberBreakdownList"></div>
+  </div>
+
+  <div class="table-container">
+    <table id="chartTable">
+      <thead>
+        <tr id="headerRow">
+          <th class="day-header" colspan="2">Day</th>
+        </tr>
+      </thead>
+      <tbody id="chartBody"></tbody>
+    </table>
+  </div>
+
+  <div class="toolbar">
+    <button class="save-button" id="saveBtn">💾 Save Changes</button>
+    <span class="status-msg" id="statusMsg">✅ Changes Saved!</span>
+  </div>
+
+  <script>
+    function sendValue(value) {
+      window.parent.postMessage({
+        isStreamlitMessage: true,
+        type: "streamlit:setComponentValue",
+        value: value
+      }, "*");
+    }
+
+    function setFrameHeight(height) {
+      window.parent.postMessage({
+        isStreamlitMessage: true,
+        type: "streamlit:setFrameHeight",
+        height: height
+      }, "*");
+    }
+
+    let records = [];
+    let DAYS = [];
+    let MEALS = [];
+    let isTableBuilt = false;
+    let hasUserModified = false; // Tracks if user has made local edits
+
+    // Scrapes the current DOM values cleanly
+    function collectCurrentRecordsFromDOM() {
+      const updated = [];
+      const tbody = document.getElementById("chartBody");
+      if (!tbody) return records;
+
+      records.forEach((rec, mIdx) => {
+        const nameInput = document.getElementById(`member_name_${mIdx}`);
+        const mName = nameInput ? nameInput.value.trim() : (rec.name || "");
+        
+        const mealsObj = {};
+        MEALS.forEach(meal => {
+          mealsObj[meal] = {};
+          DAYS.forEach(day => {
+            const cell = document.getElementById(`cell_${mIdx}_${meal}_${day}`);
+            mealsObj[meal][day] = cell ? cell.value.trim() : "";
+          });
+        });
+
+        updated.push({
+          name: mName,
+          meals: mealsObj
+        });
+      });
+      return updated;
+    }
+
+    function calculateTotalMeals() {
+      let overallTotal = 0;
+      const breakdownEl = document.getElementById("memberBreakdownList");
+      if (!breakdownEl) return;
+      breakdownEl.innerHTML = "";
+
+      const current = collectCurrentRecordsFromDOM();
+
+      current.forEach((record, idx) => {
+        let maxVal = 0;
+
+        if (record.meals) {
+          MEALS.forEach(meal => {
+            if (record.meals[meal]) {
+              DAYS.forEach(day => {
+                const raw = record.meals[meal][day];
+                if (raw !== undefined && raw !== null) {
+                  const cleaned = String(raw).trim().toLowerCase();
+                  if (cleaned !== "x" && cleaned !== "") {
+                    const num = parseFloat(cleaned);
+                    if (!isNaN(num) && num > maxVal) {
+                      maxVal = num;
+                    }
+                  }
+                }
+              });
+            }
+          });
+        }
+
+        overallTotal += maxVal;
+
+        const displayName = record.name && record.name.trim() !== "" ? record.name.trim() : `M${idx + 1}`;
+        if (maxVal > 0 || (record.name && record.name.trim() !== "")) {
+          const item = document.createElement("div");
+          item.className = "breakdown-item";
+          item.innerHTML = `<span class="breakdown-name">${displayName}:</span><span class="breakdown-num">${maxVal}</span>`;
+          breakdownEl.appendChild(item);
+        }
+      });
+
+      const displayTotal = (Math.round(overallTotal * 100) / 100).toString();
+      document.getElementById("totalMealDisplay").innerText = displayTotal;
+    }
+
+    function flashStatus() {
+      const msg = document.getElementById("statusMsg");
+      msg.classList.add("visible");
+      setTimeout(() => {
+        msg.classList.remove("visible");
+      }, 2000);
+    }
+
+    function persist() {
+      const current = collectCurrentRecordsFromDOM();
+      records = current;
+      calculateTotalMeals();
+      sendValue(records);
+      flashStatus();
+    }
+
+    // Build the DOM strictly once
+    function buildTableStructure() {
+      const theadTr = document.getElementById("headerRow");
+      theadTr.innerHTML = '<th class="day-header" colspan="2">Day</th>';
+      DAYS.forEach(day => {
+        const th = document.createElement("th");
+        th.className = "date-th";
+        th.innerText = day;
+        theadTr.appendChild(th);
+      });
+
+      const tbody = document.getElementById("chartBody");
+      tbody.innerHTML = "";
+
+      records.forEach((record, memberIdx) => {
+        MEALS.forEach((meal, mealIdx) => {
+          const tr = document.createElement("tr");
+
+          // Merged Member Name Cell
+          if (mealIdx === 0) {
+            const tdMember = document.createElement("td");
+            tdMember.className = "member-td";
+            tdMember.rowSpan = 3;
+
+            const nameInput = document.createElement("input");
+            nameInput.className = "member-input";
+            nameInput.id = `member_name_${memberIdx}`;
+            nameInput.value = record.name || "";
+            nameInput.placeholder = "Enter Name";
+
+            nameInput.addEventListener("input", () => {
+              hasUserModified = true;
+              calculateTotalMeals();
+            });
+
+            tdMember.appendChild(nameInput);
+            tr.appendChild(tdMember);
+          }
+
+          // Meal Cell
+          const tdMeal = document.createElement("td");
+          tdMeal.className = "meal-td";
+          tdMeal.innerText = meal;
+          tr.appendChild(tdMeal);
+
+          // Day input cells
+          DAYS.forEach(day => {
+            const td = document.createElement("td");
+            const input = document.createElement("input");
+            input.className = "cell-input";
+            input.id = `cell_${memberIdx}_${meal}_${day}`;
+
+            const initialVal = (record.meals && record.meals[meal] && record.meals[meal][day] !== undefined)
+                               ? record.meals[meal][day] : "";
+            input.value = initialVal;
+
+            // Live editing: recalculate summary immediately, mark as modified, NEVER auto-revert
+            input.addEventListener("input", () => {
+              hasUserModified = true;
+              calculateTotalMeals();
+            });
+
+            // Enter key navigation without page jumps
+            input.addEventListener("keydown", (e) => {
+              if (e.key === "Enter") {
+                input.blur();
+              }
+            });
+
+            td.appendChild(input);
+            tr.appendChild(td);
+          });
+
+          tbody.appendChild(tr);
+        });
+
+        // Blue Gap Divider
+        const gapTr = document.createElement("tr");
+        gapTr.className = "gap-row";
+        const gapTd = document.createElement("td");
+        gapTd.colSpan = DAYS.length + 2;
+        gapTr.appendChild(gapTd);
+        tbody.appendChild(gapTr);
+      });
+
+      isTableBuilt = true;
+      calculateTotalMeals();
+    }
+
+    // Only update values from backend if the user hasn't started typing in this session
+    function updateValuesInDOM() {
+      if (!isTableBuilt) {
+        buildTableStructure();
+        return;
+      }
+      if (hasUserModified) {
+        // User has active edits in progress: protect their work, DO NOT overwrite DOM
+        return;
+      }
+
+      records.forEach((record, memberIdx) => {
+        const nameInput = document.getElementById(`member_name_${memberIdx}`);
+        if (nameInput) {
+          nameInput.value = record.name || "";
+        }
+
+        MEALS.forEach(meal => {
+          DAYS.forEach(day => {
+            const input = document.getElementById(`cell_${memberIdx}_${meal}_${day}`);
+            if (input) {
+              const val = (record.meals && record.meals[meal] && record.meals[meal][day] !== undefined)
+                          ? record.meals[meal][day] : "";
+              input.value = val;
+            }
+          });
+        });
+      });
+      calculateTotalMeals();
+    }
+
+    window.addEventListener("message", function(event) {
+      if (event.data.type === "streamlit:render") {
+        const args = event.data.args;
+        records = args.records;
+        DAYS = args.days;
+        MEALS = args.meals;
+
+        updateValuesInDOM();
+        setFrameHeight(document.body.scrollHeight + 40);
+      }
+    });
+
+    // Save Changes explicitly syncs all values to Python and disk
+    document.getElementById("saveBtn").addEventListener("click", () => {
+      persist();
+      hasUserModified = false; // reset edit flag after saving
+    });
+
+    window.parent.postMessage({
+      isStreamlitMessage: true,
+      type: "streamlit:componentReady",
+      apiVersion: 1
+    }, "*");
+  </script>
+</body>
+</html>
