@@ -237,7 +237,7 @@ def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_na
         (group_id, owner_id, ts)
     )
     for i in range(int(max_members)):
-        initial_name = owner_name if i == 0 else ""
+        initial_name = owner_name.strip() if i == 0 else ""
         db_query(
             "INSERT INTO group_slots (group_id, slot_id, name) VALUES (?, ?, ?)",
             (group_id, i, initial_name)
@@ -328,9 +328,11 @@ def approve_member(group_id: str, target_user_id: str, target_full_name: str, ow
         WHERE group_id = ? AND user_id = ?
     """, (assigned_slot, ts, group_id, target_user_id))
 
-    curr_slot = db_query("SELECT name FROM group_slots WHERE group_id = ? AND slot_id = ?", (group_id, assigned_slot), fetch="one")
-    if curr_slot and not curr_slot["name"].strip():
-        db_query("UPDATE group_slots SET name = ? WHERE group_id = ? AND slot_id = ?", (target_full_name, group_id, assigned_slot))
+    # Strictly lock the slot name to the approved account holder's registered full_name
+    db_query(
+        "UPDATE group_slots SET name = ? WHERE group_id = ? AND slot_id = ?",
+        (target_full_name.strip(), group_id, assigned_slot)
+    )
 
     log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", {
         "summary": f"Approved {target_full_name} into Slot #{assigned_slot + 1}",
@@ -345,18 +347,25 @@ def reject_member(group_id: str, target_user_id: str, target_full_name: str, own
         "info": f"Request from @{target_user_id} was declined."
     })
 
-# ----------------- MEAL & EXPENSE DB OPERATIONS -----------------
+# ----------------- MEAL & EXPENSE DB OPERATIONS (WITH STRICT ACCOUNT HOLDER NAME LOCK) -----------------
 def load_meal_records(group_id: str):
-    members = db_query("SELECT slot_id, name FROM group_slots WHERE group_id = ? ORDER BY slot_id ASC", (group_id,), fetch="all")
+    # Fetch slots and join directly with approved account holders so only account holder names appear
+    slots = db_query("SELECT slot_id FROM group_slots WHERE group_id = ? ORDER BY slot_id ASC", (group_id,), fetch="all")
+    approved_holders = db_query("""
+        SELECT m.slot_id, u.full_name
+        FROM group_memberships m
+        JOIN users u ON m.user_id = u.user_id
+        WHERE m.group_id = ? AND m.status = 'APPROVED' AND m.slot_id IS NOT NULL
+    """, (group_id,), fetch="all")
+    holder_by_slot = {r["slot_id"]: r["full_name"].strip() for r in approved_holders}
+
     all_meals = db_query("SELECT slot_id, meal_type, day, val FROM meal_records WHERE group_id = ?", (group_id,), fetch="all")
-    
-    meal_lookup = {}
-    for r in all_meals:
-        meal_lookup[(r["slot_id"], r["meal_type"], r["day"])] = r["val"]
+    meal_lookup = {(r["slot_id"], r["meal_type"], r["day"]): r["val"] for r in all_meals}
 
     records = []
-    for m in members:
-        s_id = m["slot_id"]
+    for s in slots:
+        s_id = s["slot_id"]
+        locked_account_name = holder_by_slot.get(s_id, "")
         meals_dict = {
             meal: {
                 d: meal_lookup.get((s_id, meal, d), "x" if meal == "Nasta" else "")
@@ -364,30 +373,25 @@ def load_meal_records(group_id: str):
             }
             for meal in MEALS
         }
-        records.append({"name": m["name"], "meals": meals_dict})
+        records.append({"name": locked_account_name, "meals": meals_dict})
     return records
 
 def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_name: str, actor_id: str):
+    """
+    Saves only meal cell updates for slots occupied by approved account holders.
+    Slot names are strictly locked to account holders and cannot be altered by anyone.
+    """
     structured_changes = []
 
     for slot_id, new_rec in enumerate(new_records):
-        old_rec = old_records[slot_id] if slot_id < len(old_records) else {"name": "", "meals": {}}
-        
-        old_name = old_rec.get("name", "").strip()
-        new_name = new_rec.get("name", "").strip()
-        member_label = new_name or old_name or f"Member {slot_id + 1}"
+        if slot_id >= len(old_records):
+            continue
+        old_rec = old_records[slot_id]
+        locked_member_name = old_rec.get("name", "").strip()
 
-        if old_name != new_name:
-            structured_changes.append({
-                "kind": "name",
-                "slot_id": slot_id,
-                "member": member_label,
-                "meal": "Name Slot",
-                "day": "-",
-                "old": old_name or "(empty)",
-                "new": new_name or "(empty)"
-            })
-            db_query("UPDATE group_slots SET name = ? WHERE group_id = ? AND slot_id = ?", (new_name, group_id, slot_id))
+        # Ignore edits on unassigned/empty slots that have no account holder yet
+        if not locked_member_name:
+            continue
 
         new_meals = new_rec.get("meals", {})
         old_meals = old_rec.get("meals", {})
@@ -402,7 +406,7 @@ def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_
                     structured_changes.append({
                         "kind": "cell",
                         "slot_id": slot_id,
-                        "member": member_label,
+                        "member": locked_member_name,
                         "meal": meal,
                         "day": str(d),
                         "old": old_val if old_val != "" else "(blank)",
@@ -478,10 +482,13 @@ mess_chart_editor = components.declare_component("mess_chart_editor", path=compo
 
 # ----------------- CALCULATION HELPER -----------------
 def calculate_member_meals(records):
+    """Calculates meals only for approved account holders on the chart."""
     member_meals = {}
     total_meals = 0.0
-    for idx, rec in enumerate(records):
-        name = rec.get("name", "").strip() or f"Member {idx + 1}"
+    for rec in records:
+        name = rec.get("name", "").strip()
+        if not name:
+            continue
         m_max = 0.0
         meals = rec.get("meals", {})
         for meal_type in MEALS:
@@ -655,7 +662,7 @@ if st.session_state.user is None:
 
         with tab_signup:
             with st.form("signup_form"):
-                reg_name = st.text_input("Your Full Name", placeholder="e.g. Harsh Kumar")
+                reg_name = st.text_input("Your Full Name (Shown on Meal Chart)", placeholder="e.g. Harsh Kumar")
                 reg_uid = st.text_input("Choose a User ID", placeholder="e.g. harsh_01")
                 reg_pwd = st.text_input("Create Password", type="password")
                 if st.form_submit_button("Sign Up & Continue", use_container_width=True, type="primary"):
@@ -839,6 +846,8 @@ elif st.session_state.current_view == "MEAL_CHART":
     with top2:
         st.subheader(f"📋 Mess Meal Chart (1 - 31) — {group_info['max_members']} Members")
 
+    st.caption("🔒 Member names are locked to registered account holders and cannot be edited.")
+
     updated_records = mess_chart_editor(
         records=group_records,
         days=DAYS,
@@ -906,11 +915,12 @@ elif st.session_state.current_view == "EXPENDITURE":
         })
 
     df_summary = pd.DataFrame(summary_rows)
-    styled_summary = df_summary.style.map(
-        lambda val: f"color: {'#15803d' if val >= 0 else '#dc2626'}; font-weight: bold;",
-        subset=["Net Balance (₹)"]
-    )
-    st.dataframe(styled_summary, use_container_width=True, hide_index=True)
+    if not df_summary.empty:
+        styled_summary = df_summary.style.map(
+            lambda val: f"color: {'#15803d' if val >= 0 else '#dc2626'}; font-weight: bold;",
+            subset=["Net Balance (₹)"]
+        )
+        st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
     # Clean, blank Rupee input box (no prefilled 0, no extra instruction)
     with st.expander("➕ Add New Purchase / Expense", expanded=True):
@@ -944,28 +954,29 @@ elif st.session_state.current_view == "EXPENDITURE":
 
     st.divider()
     st.markdown("### 📑 Individual Member Purchase Logs & Statements")
-    member_tabs = st.tabs(active_members)
-    for i, member in enumerate(active_members):
-        with member_tabs[i]:
-            m_meals = member_meals[member]
-            m_eaten_cost = m_meals * per_meal_rate
-            m_items = member_purchases_map[member]
-            m_bought_total = sum(float(x.get("amount", 0.0)) for x in m_items)
-            m_net = m_bought_total - m_eaten_cost
+    if active_members:
+        member_tabs = st.tabs(active_members)
+        for i, member in enumerate(active_members):
+            with member_tabs[i]:
+                m_meals = member_meals[member]
+                m_eaten_cost = m_meals * per_meal_rate
+                m_items = member_purchases_map[member]
+                m_bought_total = sum(float(x.get("amount", 0.0)) for x in m_items)
+                m_net = m_bought_total - m_eaten_cost
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Meals Eaten", f"{m_meals:.1f}")
-            c2.metric("Total Grocery Bought", f"₹{m_bought_total:,.0f}")
-            c3.metric("Amount Eaten", f"₹{m_eaten_cost:,.2f}")
-            c4.metric(f"Balance ({'Refund' if m_net >= 0 else 'Due to Pay'})", f"₹{abs(m_net):,.2f}")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Meals Eaten", f"{m_meals:.1f}")
+                c2.metric("Total Grocery Bought", f"₹{m_bought_total:,.0f}")
+                c3.metric("Amount Eaten", f"₹{m_eaten_cost:,.2f}")
+                c4.metric(f"Balance ({'Refund' if m_net >= 0 else 'Due to Pay'})", f"₹{abs(m_net):,.2f}")
 
-            if m_items:
-                df_m = pd.DataFrame(m_items)[["date", "item", "amount"]].copy()
-                df_m["amount"] = df_m["amount"].apply(lambda x: f"₹{int(float(x)):,}")
-                df_m = df_m.rename(columns={"date": "Date", "item": "Item Name", "amount": "Amount (₹)"})
-                st.dataframe(df_m, use_container_width=True, hide_index=True)
-            else:
-                st.info(f"No grocery purchases recorded for {member} yet.")
+                if m_items:
+                    df_m = pd.DataFrame(m_items)[["date", "item", "amount"]].copy()
+                    df_m["amount"] = df_m["amount"].apply(lambda x: f"₹{int(float(x)):,}")
+                    df_m = df_m.rename(columns={"date": "Date", "item": "Item Name", "amount": "Amount (₹)"})
+                    st.dataframe(df_m, use_container_width=True, hide_index=True)
+                else:
+                    st.info(f"No grocery purchases recorded for {member} yet.")
 
     st.write("")
     col_del, col_csv = st.columns([2, 2])
