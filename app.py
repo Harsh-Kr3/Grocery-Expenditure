@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import uuid
 import hashlib
 import sqlite3
@@ -43,7 +44,7 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 def now_str() -> str:
-    return datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+    return datetime.now().strftime("%d %b %Y, %I:%M %p")
 
 # ----------------- UNIVERSAL DATABASE ENGINE -----------------
 def get_connection():
@@ -128,7 +129,6 @@ def init_db():
             amount REAL NOT NULL
         )
     """)
-    # 7. Audit / Activity Logs Table
     db_query(f"""
         CREATE TABLE IF NOT EXISTS activity_logs (
             id {serial_type},
@@ -144,10 +144,14 @@ def init_db():
 init_db()
 
 # ----------------- AUDIT LOGGING HELPER -----------------
-def log_activity(group_id: str, actor_name: str, actor_id: str, action_type: str, details: str):
+def log_activity(group_id: str, actor_name: str, actor_id: str, action_type: str, details_obj):
+    if isinstance(details_obj, (dict, list)):
+        details_str = json.dumps(details_obj)
+    else:
+        details_str = str(details_obj)
     db_query(
         "INSERT INTO activity_logs (group_id, timestamp, actor_name, actor_id, action_type, details) VALUES (?, ?, ?, ?, ?, ?)",
-        (group_id, now_str(), actor_name, actor_id, action_type, details)
+        (group_id, now_str(), actor_name, actor_id, action_type, details_str)
     )
 
 def load_activity_logs(group_id: str):
@@ -156,6 +160,17 @@ def load_activity_logs(group_id: str):
         (group_id,),
         fetch="all"
     )
+
+def parse_log_details(log_row):
+    """Parses structured JSON logs or falls back gracefully for older text logs."""
+    raw = log_row.get("details", "")
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {"summary": raw, "changes": []}
 
 # ----------------- USER & GROUP OPERATIONS -----------------
 def register_user(user_id: str, full_name: str, password: str):
@@ -199,7 +214,10 @@ def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_na
                     "INSERT INTO meal_records (group_id, slot_id, meal_type, day, val) VALUES (?, ?, ?, ?, ?)",
                     (group_id, i, m, d, "x" if m == "Nasta" else "")
                 )
-    log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", f"Created group '{group_name.strip()}' with {max_members} member slots.")
+    log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", {
+        "summary": f"Created group '{group_name.strip()}' ({max_members} slots)",
+        "info": f"Group Owner: {owner_name} (@{owner_id})"
+    })
     return group_id
 
 def request_join_group(group_id: str, user_id: str, user_name: str):
@@ -220,7 +238,10 @@ def request_join_group(group_id: str, user_id: str, user_name: str):
         "INSERT INTO group_memberships (group_id, user_id, status, slot_id) VALUES (?, ?, 'PENDING', NULL)",
         (group_id, user_id)
     )
-    log_activity(group_id, user_name, user_id, "GROUP_ADMIN", f"Requested to join the group.")
+    log_activity(group_id, user_name, user_id, "GROUP_ADMIN", {
+        "summary": "Requested to join the group",
+        "info": f"User {user_name} (@{user_id}) is awaiting approval."
+    })
     return True, "Join request sent to the group owner! Waiting for approval."
 
 def get_user_groups(user_id: str):
@@ -273,14 +294,20 @@ def approve_member(group_id: str, target_user_id: str, target_full_name: str, ow
     if curr_slot and not curr_slot["name"].strip():
         db_query("UPDATE group_slots SET name = ? WHERE group_id = ? AND slot_id = ?", (target_full_name, group_id, assigned_slot))
 
-    log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", f"Approved member '{target_full_name}' (@{target_user_id}) into Slot #{assigned_slot + 1}.")
+    log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", {
+        "summary": f"Approved {target_full_name} into Slot #{assigned_slot + 1}",
+        "info": f"Member @{target_user_id} approved by {owner_name}."
+    })
     return True, f"Approved {target_full_name} (Assigned to Slot #{assigned_slot + 1})"
 
 def reject_member(group_id: str, target_user_id: str, target_full_name: str, owner_name: str, owner_id: str):
     db_query("DELETE FROM group_memberships WHERE group_id = ? AND user_id = ?", (group_id, target_user_id))
-    log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", f"Rejected join request from '{target_full_name}' (@{target_user_id}).")
+    log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", {
+        "summary": f"Rejected join request from {target_full_name}",
+        "info": f"Request from @{target_user_id} was declined."
+    })
 
-# ----------------- MEAL & EXPENSE DB OPERATIONS (WITH DIFF AUDIT LOGGING) -----------------
+# ----------------- MEAL & EXPENSE DB OPERATIONS (WITH STRUCTURED DIFFS) -----------------
 def load_meal_records(group_id: str):
     members = db_query("SELECT slot_id, name FROM group_slots WHERE group_id = ? ORDER BY slot_id ASC", (group_id,), fetch="all")
     all_meals = db_query("SELECT slot_id, meal_type, day, val FROM meal_records WHERE group_id = ?", (group_id,), fetch="all")
@@ -303,17 +330,25 @@ def load_meal_records(group_id: str):
     return records
 
 def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_name: str, actor_id: str):
-    changes_made = []
+    structured_changes = []
 
     for slot_id, new_rec in enumerate(new_records):
         old_rec = old_records[slot_id] if slot_id < len(old_records) else {"name": "", "meals": {}}
         
         old_name = old_rec.get("name", "").strip()
         new_name = new_rec.get("name", "").strip()
-        member_label = new_name or old_name or f"Slot #{slot_id + 1}"
+        member_label = new_name or old_name or f"Member {slot_id + 1}"
 
         if old_name != new_name:
-            changes_made.append(f"Changed Slot #{slot_id + 1} Name: '{old_name or '(empty)'}' → '{new_name or '(empty)'}'")
+            structured_changes.append({
+                "kind": "name",
+                "slot_id": slot_id,
+                "member": member_label,
+                "meal": "Name Slot",
+                "day": "-",
+                "old": old_name or "(empty)",
+                "new": new_name or "(empty)"
+            })
             db_query("UPDATE group_slots SET name = ? WHERE group_id = ? AND slot_id = ?", (new_name, group_id, slot_id))
 
         new_meals = new_rec.get("meals", {})
@@ -326,32 +361,48 @@ def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_
                 new_val = str(new_day_dict.get(d, "")).strip()
                 old_val = str(old_day_dict.get(d, "")).strip()
                 if new_val != old_val:
-                    changes_made.append(
-                        f"[{member_label}] {meal} (Day {d}): '{old_val or '(blank)'}' → '{new_val or '(blank)'}'"
-                    )
+                    structured_changes.append({
+                        "kind": "cell",
+                        "slot_id": slot_id,
+                        "member": member_label,
+                        "meal": meal,
+                        "day": str(d),
+                        "old": old_val if old_val != "" else "(blank)",
+                        "new": new_val if new_val != "" else "(blank)"
+                    })
                     db_query("""
                         INSERT INTO meal_records (group_id, slot_id, meal_type, day, val)
                         VALUES (?, ?, ?, ?, ?)
                         ON CONFLICT(group_id, slot_id, meal_type, day) DO UPDATE SET val = excluded.val
                     """, (group_id, slot_id, meal, d, new_val))
 
-    if changes_made:
-        summary_text = "; ".join(changes_made)
-        log_activity(group_id, actor_name, actor_id, "MEAL_UPDATE", summary_text)
+    if structured_changes:
+        affected_members = list(dict.fromkeys(c["member"] for c in structured_changes))
+        short_summary = f"Updated {len(structured_changes)} chart cell(s) ({', '.join(affected_members[:2])})"
+        log_activity(group_id, actor_name, actor_id, "MEAL_UPDATE", {
+            "summary": short_summary,
+            "changes": structured_changes
+        })
 
-    return len(changes_made)
+    return len(structured_changes)
 
 def load_purchases(group_id: str):
     return db_query("SELECT id, date, item, buyer, amount FROM purchases WHERE group_id = ? ORDER BY id ASC", (group_id,), fetch="all")
 
-def add_purchase(group_id: str, date_str: str, item: str, buyer: str, amount: float, actor_name: str, actor_id: str):
+def add_purchase(group_id: str, date_str: str, item: str, buyer: str, amount: int, actor_name: str, actor_id: str):
     db_query(
         "INSERT INTO purchases (group_id, date, item, buyer, amount) VALUES (?, ?, ?, ?, ?)",
         (group_id, date_str, item, buyer, float(amount))
     )
     log_activity(
         group_id, actor_name, actor_id, "EXPENSE_ADD",
-        f"Added expense: '{item}' of ₹{float(amount):,.2f} (Purchased by {buyer} on {date_str})"
+        {
+            "summary": f"Added ₹{int(amount):,} for {item}",
+            "item": item,
+            "amount": int(amount),
+            "buyer": buyer,
+            "date": date_str
+        }
     )
 
 def delete_last_purchase(group_id: str, actor_name: str, actor_id: str):
@@ -364,7 +415,13 @@ def delete_last_purchase(group_id: str, actor_name: str, actor_id: str):
         db_query("DELETE FROM purchases WHERE id = ?", (last_row["id"],))
         log_activity(
             group_id, actor_name, actor_id, "EXPENSE_DELETE",
-            f"Deleted last expense: '{last_row['item']}' of ₹{float(last_row['amount']):,.2f} (Originally bought by {last_row['buyer']} on {last_row['date']})"
+            {
+                "summary": f"Deleted ₹{int(float(last_row['amount'])):,} ({last_row['item']})",
+                "item": last_row["item"],
+                "amount": int(float(last_row["amount"])),
+                "buyer": last_row["buyer"],
+                "date": last_row["date"]
+            }
         )
         return last_row
     return None
@@ -418,6 +475,8 @@ if "current_view" not in st.session_state:
     st.session_state.current_view = "HOME"
 if "confirm_delete_expense" not in st.session_state:
     st.session_state.confirm_delete_expense = False
+if "selected_log_id" not in st.session_state:
+    st.session_state.selected_log_id = None
 
 invite_code_param = st.query_params.get("join", "").strip().upper()
 
@@ -517,7 +576,7 @@ if st.session_state.active_group_id is None:
         st.subheader("➕ Create a New Mess Group")
         with st.form("create_group_form"):
             g_name = st.text_input("Group / Mess Name", placeholder="e.g. Hostel Block-B Mess")
-            g_max = st.number_input("Number of Members", min_value=2, max_value=25, value=5, step=1)
+            g_max = st.number_input("Number of Members", min_value=2, max_value=25, value=5, step=1, format="%d")
             if st.form_submit_button("Create Group", use_container_width=True, type="primary"):
                 if g_name.strip():
                     new_gid = create_mess_group(g_name, g_max, current_user["user_id"], current_user["full_name"])
@@ -657,7 +716,7 @@ elif st.session_state.current_view == "EXPENDITURE":
     per_meal_rate = (total_spent / total_meals) if total_meals > 0 else 0.0
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("💵 Total Mess Expenditure", f"₹{total_spent:,.2f}")
+    m1.metric("💵 Total Mess Expenditure", f"₹{total_spent:,.0f}")
     m2.metric("🍲 Total Meals Eaten", f"{total_meals:.1f}")
     m3.metric("📈 Per-Meal Rate", f"₹{per_meal_rate:.2f}")
 
@@ -679,7 +738,7 @@ elif st.session_state.current_view == "EXPENDITURE":
         summary_rows.append({
             "Member": member,
             "Meals Eaten": meals_eaten,
-            "Grocery Bought (₹)": round(bought_amt, 2),
+            "Grocery Bought (₹)": int(round(bought_amt)),
             "Eaten Cost (₹)": round(eaten_cost, 2),
             "Net Balance (₹)": round(balance, 2),
             "Settlement Status": "Refund Due" if balance >= 0 else "To Pay"
@@ -692,7 +751,8 @@ elif st.session_state.current_view == "EXPENDITURE":
     )
     st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
-    with st.expander("➕ Add New Purchase / Expense", expanded=False):
+    # Clean integer Rupee input (No 0.000 decimals)
+    with st.expander("➕ Add New Purchase / Expense", expanded=True):
         with st.form("purchase_form", clear_on_submit=True):
             col_d, col_item, col_buyer, col_amt = st.columns([2, 4, 3, 2])
             with col_d:
@@ -702,23 +762,24 @@ elif st.session_state.current_view == "EXPENDITURE":
             with col_buyer:
                 p_buyer = st.selectbox("Purchased By", active_members)
             with col_amt:
-                p_amount = st.number_input("Amount (₹)", min_value=0.0, step=10.0, value=0.0)
+                p_amount = st.number_input("Amount in Rupees (₹)", min_value=0, step=10, value=0, format="%d")
 
-            if st.form_submit_button("Record Purchase Entry", use_container_width=True, type="primary"):
+            if st.form_submit_button("Record Purchase Entry (₹)", use_container_width=True, type="primary"):
                 if p_amount > 0 and p_item.strip():
                     add_purchase(
                         active_gid,
                         p_date.strftime("%Y-%m-%d"),
                         p_item.strip(),
                         p_buyer,
-                        p_amount,
+                        int(p_amount),
                         current_user["full_name"],
                         current_user["user_id"]
                     )
                     st.session_state.confirm_delete_expense = False
+                    st.toast(f"Added ₹{int(p_amount):,} for {p_item.strip()}", icon="✅")
                     st.rerun()
                 else:
-                    st.error("Please enter a valid item name and amount.")
+                    st.error("Please enter an item name and an amount in ₹ greater than 0.")
 
     st.divider()
     st.markdown("### 📑 Individual Member Purchase Logs & Statements")
@@ -733,14 +794,14 @@ elif st.session_state.current_view == "EXPENDITURE":
 
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Meals Eaten", f"{m_meals:.1f}")
-            c2.metric("Total Grocery Bought", f"₹{m_bought_total:,.2f}")
+            c2.metric("Total Grocery Bought", f"₹{m_bought_total:,.0f}")
             c3.metric("Amount Eaten", f"₹{m_eaten_cost:,.2f}")
             c4.metric(f"Balance ({'Refund' if m_net >= 0 else 'Due to Pay'})", f"₹{abs(m_net):,.2f}")
 
             if m_items:
-                df_m = pd.DataFrame(m_items)[["date", "item", "amount"]].rename(
-                    columns={"date": "Date", "item": "Item Name", "amount": "Amount (₹)"}
-                )
+                df_m = pd.DataFrame(m_items)[["date", "item", "amount"]].copy()
+                df_m["amount"] = df_m["amount"].apply(lambda x: f"₹{int(float(x)):,}")
+                df_m = df_m.rename(columns={"date": "Date", "item": "Item Name", "amount": "Amount (₹)"})
                 st.dataframe(df_m, use_container_width=True, hide_index=True)
             else:
                 st.info(f"No grocery purchases recorded for {member} yet.")
@@ -756,11 +817,11 @@ elif st.session_state.current_view == "EXPENDITURE":
             else:
                 last_exp = purchases[-1]
                 st.warning(
-                    f"⚠️ **Are you sure you want to delete the last added expense?**\n\n"
+                    f"⚠️ **Confirm Deletion of Last Updated Expense?**\n\n"
                     f"- **Item:** {last_exp['item']}\n"
-                    f"- **Amount:** ₹{float(last_exp['amount']):,.2f}\n"
+                    f"- **Amount:** ₹{int(float(last_exp['amount'])):,}\n"
                     f"- **Purchased By:** {last_exp['buyer']} (Date: {last_exp['date']})\n\n"
-                    f"*Note: This deletion will be recorded in the group Activity History.*"
+                    f"*This deletion will be permanently logged in the Activity History.*"
                 )
                 c_yes, c_no = st.columns(2)
                 if c_yes.button("⚠️ Yes, Permanently Delete", type="primary", use_container_width=True):
@@ -783,7 +844,7 @@ elif st.session_state.current_view == "EXPENDITURE":
                 use_container_width=True
             )
 
-# ----------------- 4. ACTIVITY & AUDIT HISTORY VIEW -----------------
+# ----------------- 4. COMPACT HISTORY + SIDE VISUAL DIFF INSPECTOR -----------------
 elif st.session_state.current_view == "HISTORY":
     top1, top2 = st.columns([1, 8])
     with top1:
@@ -791,45 +852,155 @@ elif st.session_state.current_view == "HISTORY":
             st.session_state.current_view = "HOME"
             st.rerun()
     with top2:
-        st.subheader("📜 Group Activity & Audit History")
-
-    st.caption("Every meal chart edit, name change, expense addition, and expense deletion made by any group member is permanently logged here.")
+        st.subheader("📜 Activity History & Visual Change Inspector")
 
     logs = load_activity_logs(active_gid)
-    if logs:
-        df_logs = pd.DataFrame(logs)
-
-        f_col1, f_col2 = st.columns(2)
-        with f_col1:
-            action_types = ["All Actions"] + sorted(df_logs["action_type"].unique().tolist())
-            selected_action = st.selectbox("Filter by Action Type:", action_types)
-        with f_col2:
-            actors = ["All Members"] + sorted(df_logs["actor_name"].unique().tolist())
-            selected_actor = st.selectbox("Filter by Member:", actors)
-
-        filtered_df = df_logs.copy()
-        if selected_action != "All Actions":
-            filtered_df = filtered_df[filtered_df["action_type"] == selected_action]
-        if selected_actor != "All Members":
-            filtered_df = filtered_df[filtered_df["actor_name"] == selected_actor]
-
-        display_logs = filtered_df[["timestamp", "actor_name", "actor_id", "action_type", "details"]].rename(
-            columns={
-                "timestamp": "Timestamp",
-                "actor_name": "Member Name",
-                "actor_id": "User ID",
-                "action_type": "Action Category",
-                "details": "Change Details (Before → After)"
-            }
-        )
-        st.dataframe(display_logs, use_container_width=True, hide_index=True)
-
-        csv_history = display_logs.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="📥 Export Audit History (CSV)",
-            data=csv_history,
-            file_name=f"mess_audit_history_{active_gid}.csv",
-            mime="text/csv"
-        )
-    else:
+    if not logs:
         st.info("No activity recorded for this group yet.")
+    else:
+        # Default selection is the most recent log entry
+        if st.session_state.selected_log_id is None or not any(l["id"] == st.session_state.selected_log_id for l in logs):
+            st.session_state.selected_log_id = logs[0]["id"]
+
+        # Split layout: Left = Short History Feed | Right = Side Visual Diff Page
+        left_col, right_col = st.columns([4, 6], gap="large")
+
+        with left_col:
+            st.markdown("#### 🕒 Recent Actions (Click to Inspect)")
+            badge_icons = {
+                "MEAL_UPDATE": "🍽️",
+                "EXPENSE_ADD": "➕",
+                "EXPENSE_DELETE": "🗑️",
+                "GROUP_ADMIN": "👑"
+            }
+
+            for log_item in logs:
+                parsed = parse_log_details(log_item)
+                icon = badge_icons.get(log_item["action_type"], "📌")
+                short_title = parsed.get("summary", log_item["action_type"])
+                is_selected = (log_item["id"] == st.session_state.selected_log_id)
+
+                with st.container(border=True):
+                    c_info, c_btn = st.columns([4, 1.3])
+                    with c_info:
+                        st.markdown(f"**{icon} {short_title}**")
+                        st.caption(f"👤 {log_item['actor_name']} • 🕒 {log_item['timestamp']}")
+                    with c_btn:
+                        btn_label = "Viewing" if is_selected else "🔍 View"
+                        btn_type = "primary" if is_selected else "secondary"
+                        if st.button(btn_label, key=f"sel_log_{log_item['id']}", use_container_width=True, type=btn_type):
+                            st.session_state.selected_log_id = log_item["id"]
+                            st.rerun()
+
+        with right_col:
+            selected_log = next((l for l in logs if l["id"] == st.session_state.selected_log_id), logs[0])
+            parsed_sel = parse_log_details(selected_log)
+            act_type = selected_log["action_type"]
+
+            with st.container(border=True):
+                st.markdown(f"### 🔎 Action Details")
+                st.markdown(
+                    f"**Performed By:** `{selected_log['actor_name']}` (`@{selected_log['actor_id']}`)  \n"
+                    f"**Timestamp:** `{selected_log['timestamp']}`"
+                )
+                st.divider()
+
+                # CASE 1: MEAL CHART UPDATE -> VISUAL COLOR HIGHLIGHTED DIFF & CHART PREVIEW
+                if act_type == "MEAL_UPDATE":
+                    changes = parsed_sel.get("changes", [])
+                    if changes:
+                        st.markdown("#### 🎨 Highlighted Cell Changes on Meal Chart")
+                        cards_html = "<div style='display:flex; flex-direction:column; gap:10px; margin-bottom:18px;'>"
+                        for ch in changes:
+                            day_badge = f"Day {ch['day']}" if ch.get("day") != "-" else "Member Name"
+                            cards_html += f"""
+                            <div style="background:#1e293b; border-left:5px solid #f59e0b; padding:12px 16px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; color:#f8fafc;">
+                                <div>
+                                    <span style="background:#3b82f6; color:white; padding:3px 8px; border-radius:4px; font-size:12px; font-weight:700; margin-right:8px;">{ch.get('member')}</span>
+                                    <span style="font-weight:600; font-size:14px; color:#e2e8f0;">{ch.get('meal')}</span>
+                                    <span style="color:#fbbf24; font-weight:700; margin-left:8px;">({day_badge})</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <span style="background:#7f1d1d; color:#fca5a5; padding:4px 10px; border-radius:6px; text-decoration:line-through; font-weight:600;">{ch.get('old')}</span>
+                                    <span style="color:#94a3b8; font-weight:bold;">➔</span>
+                                    <span style="background:#14532d; color:#86efac; padding:4px 12px; border-radius:6px; font-weight:800; border:1px solid #22c55e;">{ch.get('new')}</span>
+                                </div>
+                            </div>
+                            """
+                        cards_html += "</div>"
+                        st.markdown(cards_html, unsafe_allow_html=True)
+
+                        # Mini Meal Chart Preview highlighting the modified cells in Amber/Green
+                        cell_changes = [c for c in changes if c.get("kind") == "cell"]
+                        if cell_changes:
+                            st.markdown("#### 🗺️ Meal Chart Highlight Preview (Modified Cells in Orange/Green)")
+                            affected_members_map = {}
+                            for c in cell_changes:
+                                m_name = c["member"]
+                                affected_members_map.setdefault(m_name, {})[(c["meal"], str(c["day"]))] = c
+
+                            # Build compact HTML table showing affected members and highlighted days
+                            changed_days = sorted(list({int(c["day"]) for c in cell_changes if str(c["day"]).isdigit()}))
+                            preview_html = "<div style='overflow-x:auto;'><table style='width:100%; border-collapse:collapse; font-size:12px; text-align:center;'>"
+                            preview_html += "<tr style='background:#0b57d0; color:white;'><th style='padding:6px; border:1px solid #334155;'>Member</th><th style='padding:6px; border:1px solid #334155;'>Meal</th>"
+                            for d_num in changed_days:
+                                preview_html += f"<th style='padding:6px; border:1px solid #334155; background:#d97706;'>Day {d_num}</th>"
+                            preview_html += "</tr>"
+
+                            for m_name, coords in affected_members_map.items():
+                                for m_idx, meal_type in enumerate(MEALS):
+                                    preview_html += "<tr>"
+                                    if m_idx == 0:
+                                        preview_html += f"<td rowspan='3' style='background:#1e3a8a; color:white; font-weight:bold; padding:6px; border:1px solid #334155;'>{m_name}</td>"
+                                    preview_html += f"<td style='background:#1d4ed8; color:white; font-weight:600; padding:5px; border:1px solid #334155;'>{meal_type}</td>"
+                                    for d_num in changed_days:
+                                        key_coord = (meal_type, str(d_num))
+                                        if key_coord in coords:
+                                            ch_item = coords[key_coord]
+                                            preview_html += (
+                                                f"<td style='background:#fef08a; color:#0f172a; font-weight:800; padding:6px; border:2px solid #f59e0b;'>"
+                                                f"<span style='color:#dc2626; text-decoration:line-through; font-size:11px; margin-right:4px;'>{ch_item['old']}</span>"
+                                                f"<span style='color:#15803d; font-size:13px;'>{ch_item['new']}</span>"
+                                                f"</td>"
+                                            )
+                                        else:
+                                            preview_html += "<td style='background:#0f172a; color:#64748b; padding:5px; border:1px solid #334155;'>—</td>"
+                                    preview_html += "</tr>"
+                            preview_html += "</table></div>"
+                            st.markdown(preview_html, unsafe_allow_html=True)
+                    else:
+                        st.info(parsed_sel.get("summary", "Meal chart updated."))
+
+                # CASE 2: EXPENSE ADDED
+                elif act_type == "EXPENSE_ADD":
+                    st.markdown(
+                        f"""
+                        <div style="background:#064e3b; border-left:6px solid #10b981; padding:16px; border-radius:8px; color:#ecfdf5;">
+                            <h4 style="margin:0 0 8px 0; color:#6ee7b7;">➕ New Grocery Expense Added</h4>
+                            <p style="margin:4px 0;"><b>Item Purchased:</b> {parsed_sel.get('item', '-')}</p>
+                            <p style="margin:4px 0;"><b>Amount:</b> <span style="font-size:18px; font-weight:800; color:#34d399;">₹{parsed_sel.get('amount', 0):,}</span></p>
+                            <p style="margin:4px 0;"><b>Paid By:</b> {parsed_sel.get('buyer', '-')}</p>
+                            <p style="margin:4px 0;"><b>Purchase Date:</b> {parsed_sel.get('date', '-')}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+                # CASE 3: EXPENSE DELETED
+                elif act_type == "EXPENSE_DELETE":
+                    st.markdown(
+                        f"""
+                        <div style="background:#450a0a; border-left:6px solid #ef4444; padding:16px; border-radius:8px; color:#fef2f2;">
+                            <h4 style="margin:0 0 8px 0; color:#fca5a5;">🗑️ Expense Entry Deleted</h4>
+                            <p style="margin:4px 0;"><b>Deleted Item:</b> {parsed_sel.get('item', '-')}</p>
+                            <p style="margin:4px 0;"><b>Deleted Amount:</b> <span style="font-size:18px; font-weight:800; color:#f87171; text-decoration:line-through;">₹{parsed_sel.get('amount', 0):,}</span></p>
+                            <p style="margin:4px 0;"><b>Originally Paid By:</b> {parsed_sel.get('buyer', '-')}</p>
+                            <p style="margin:4px 0;"><b>Original Date:</b> {parsed_sel.get('date', '-')}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+                # CASE 4: GROUP ADMIN ACTIONS
+                else:
+                    st.info(f"**{parsed_sel.get('summary', '')}**\n\n{parsed_sel.get('info', '')}")
