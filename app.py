@@ -102,7 +102,6 @@ def init_db():
             PRIMARY KEY (group_id, user_id)
         )
     """)
-    # Safely ensure joined_at column exists on older databases
     try:
         db_query("ALTER TABLE group_memberships ADD COLUMN joined_at TEXT")
     except Exception:
@@ -198,13 +197,16 @@ def authenticate_user(user_id: str, password: str):
         fetch="one"
     )
 
-def change_user_password(user_id: str, current_pwd: str, new_pwd: str):
+def verify_user_password(user_id: str, password: str) -> bool:
     row = db_query(
         "SELECT user_id FROM users WHERE user_id = ? AND password_hash = ?",
-        (user_id, hash_password(current_pwd)),
+        (user_id.strip().lower(), hash_password(password)),
         fetch="one"
     )
-    if not row:
+    return bool(row)
+
+def change_user_password(user_id: str, current_pwd: str, new_pwd: str):
+    if not verify_user_password(user_id, current_pwd):
         return False, "Current password is incorrect."
     if len(new_pwd) < 4:
         return False, "New password must be at least 4 characters."
@@ -213,6 +215,15 @@ def change_user_password(user_id: str, current_pwd: str, new_pwd: str):
         (hash_password(new_pwd), user_id)
     )
     return True, "Password updated successfully!"
+
+def delete_entire_group(group_id: str):
+    """Permanently deletes a group and all associated records."""
+    db_query("DELETE FROM meal_records WHERE group_id = ?", (group_id,))
+    db_query("DELETE FROM group_slots WHERE group_id = ?", (group_id,))
+    db_query("DELETE FROM purchases WHERE group_id = ?", (group_id,))
+    db_query("DELETE FROM activity_logs WHERE group_id = ?", (group_id,))
+    db_query("DELETE FROM group_memberships WHERE group_id = ?", (group_id,))
+    db_query("DELETE FROM mess_groups WHERE group_id = ?", (group_id,))
 
 def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_name: str):
     group_id = uuid.uuid4().hex[:8].upper()
@@ -269,7 +280,6 @@ def request_join_group(group_id: str, user_id: str, user_name: str):
     return True, "Join request sent to the group owner! Waiting for approval."
 
 def get_user_groups(user_id: str):
-    """Returns groups ordered with the most recently joined/approved group first."""
     rows = db_query("""
         SELECT g.group_id, g.group_name, g.max_members, g.owner_id, m.status, m.slot_id, m.joined_at
         FROM group_memberships m
@@ -495,7 +505,7 @@ def calculate_member_meals(records):
     return total_meals, member_meals
 
 # ----------------- PROFILE PANEL HELPER (RIGHT-HAND SIDE) -----------------
-def render_profile_popover(current_user, user_groups, active_gid):
+def render_profile_popover(current_user, user_groups, active_gid, active_group_info=None):
     with st.popover(f"👤 {current_user['full_name']}", use_container_width=True):
         st.markdown(f"### 👤 {current_user['full_name']}")
         st.caption(f"**User ID:** `@{current_user['user_id']}`")
@@ -509,20 +519,22 @@ def render_profile_popover(current_user, user_groups, active_gid):
                 role_icon = "👑" if g["owner_id"] == current_user["user_id"] else "👤"
                 if g["status"] == "APPROVED":
                     if is_current:
-                        st.markdown(f"✅ **{g['group_name']}** (`{g['group_id']}`) — *Active*")
+                        st.markdown(f"✅ **{g['group_name']}** — *Active*")
                     else:
-                        if st.button(f"{role_icon} Switch to {g['group_name']} ({g['group_id']})", key=f"prof_sw_{g['group_id']}", use_container_width=True):
+                        if st.button(f"{role_icon} Switch to {g['group_name']}", key=f"prof_sw_{g['group_id']}", use_container_width=True):
                             st.session_state.active_group_id = g["group_id"]
                             st.session_state.show_group_lobby = False
+                            st.session_state.delete_grp_step = 0
                             st.session_state.current_view = "HOME"
                             st.rerun()
                 else:
-                    st.caption(f"⏳ {g['group_name']} (`{g['group_id']}`) — *Pending Approval*")
+                    st.caption(f"⏳ {g['group_name']} — *Pending Approval*")
         else:
             st.caption("No groups joined yet.")
 
         if st.button("➕ Create / Join Another Group", use_container_width=True):
             st.session_state.show_group_lobby = True
+            st.session_state.delete_grp_step = 0
             st.rerun()
 
         st.divider()
@@ -545,14 +557,54 @@ def render_profile_popover(current_user, user_groups, active_gid):
                         else:
                             st.error(msg)
 
+        # 3. Owner-Only Option: Delete Active Group (Password + 2nd Verification)
+        if active_group_info and active_group_info["owner_id"] == current_user["user_id"]:
+            st.divider()
+            with st.expander("🗑️ Delete Group", expanded=(st.session_state.delete_grp_step > 0)):
+                if st.session_state.delete_grp_step == 0:
+                    st.caption(f"Delete **{active_group_info['group_name']}** permanently.")
+                    if st.button("🗑️ Delete This Group", key="init_del_grp", use_container_width=True):
+                        st.session_state.delete_grp_step = 1
+                        st.rerun()
+
+                elif st.session_state.delete_grp_step == 1:
+                    st.markdown("**Step 1: Enter Account Password**")
+                    del_pwd = st.text_input("Password", type="password", key="del_grp_pwd_input")
+                    c_p1, c_p2 = st.columns(2)
+                    if c_p1.button("Verify", key="verify_del_pwd", type="primary", use_container_width=True):
+                        if verify_user_password(current_user["user_id"], del_pwd):
+                            st.session_state.delete_grp_step = 2
+                            st.rerun()
+                        else:
+                            st.error("Incorrect password.")
+                    if c_p2.button("Cancel", key="cancel_del_1", use_container_width=True):
+                        st.session_state.delete_grp_step = 0
+                        st.rerun()
+
+                elif st.session_state.delete_grp_step == 2:
+                    st.warning(
+                        f"⚠️ **2nd Verification:** Are you 100% sure you want to permanently delete **{active_group_info['group_name']}** and all its meal & expense data?"
+                    )
+                    c_y, c_n = st.columns(2)
+                    if c_y.button("⚠️ Yes, Delete", key="final_del_grp", type="primary", use_container_width=True):
+                        delete_entire_group(active_gid)
+                        st.session_state.active_group_id = None
+                        st.session_state.delete_grp_step = 0
+                        st.toast(f"Group '{active_group_info['group_name']}' deleted.", icon="🗑️")
+                        st.rerun()
+                    if c_n.button("✖️ Cancel", key="cancel_del_2", use_container_width=True):
+                        st.session_state.delete_grp_step = 0
+                        st.rerun()
+
         st.divider()
 
-        # 3. Logout Option
+        # 4. Logout Option
         if st.button("🚪 Logout", use_container_width=True, type="secondary"):
             st.session_state.user = None
             st.session_state.active_group_id = None
             st.session_state.show_group_lobby = False
             st.session_state.confirm_delete_expense = False
+            st.session_state.delete_grp_step = 0
             st.rerun()
 
 # ----------------- SESSION & QUERY PARAM INITIALIZATION -----------------
@@ -568,6 +620,8 @@ if "confirm_delete_expense" not in st.session_state:
     st.session_state.confirm_delete_expense = False
 if "selected_log_id" not in st.session_state:
     st.session_state.selected_log_id = None
+if "delete_grp_step" not in st.session_state:
+    st.session_state.delete_grp_step = 0
 
 invite_code_param = st.query_params.get("join", "").strip().upper()
 
@@ -579,7 +633,7 @@ if st.session_state.user is None:
     if invite_code_param:
         grp_info = get_group_details(invite_code_param)
         if grp_info:
-            st.info(f"🔗 Invited to join **{grp_info['group_name']}** (`{invite_code_param}`). Log in or create an account below!")
+            st.info(f"🔗 Invited to join **{grp_info['group_name']}**. Log in or create an account below!")
 
     col_s1, col_auth, col_s2 = st.columns([1, 2, 1])
     with col_auth:
@@ -630,20 +684,19 @@ current_user = st.session_state.user
 user_groups = get_user_groups(current_user["user_id"])
 approved_groups = [g for g in user_groups if g["status"] == "APPROVED"]
 
-# Automatically open the most recently joined approved group unless user explicitly opened the lobby
 if st.session_state.active_group_id is None and approved_groups and not st.session_state.show_group_lobby:
     st.session_state.active_group_id = approved_groups[0]["group_id"]
     st.session_state.current_view = "HOME"
 
 # ==============================================================================
-# PHASE 2: GROUP CREATION / JOIN PAGE (ONLY IF NO APPROVED GROUP OR EXPLICITLY OPENED)
+# PHASE 2: GROUP CREATION / JOIN PAGE
 # ==============================================================================
 if st.session_state.active_group_id is None or st.session_state.show_group_lobby:
     top_l, top_r = st.columns([7, 2])
     with top_l:
         st.markdown("## 🏠 Create or Join a Mess Group")
     with top_r:
-        render_profile_popover(current_user, user_groups, st.session_state.active_group_id)
+        render_profile_popover(current_user, user_groups, st.session_state.active_group_id, None)
 
     if approved_groups and st.button("⬅️ Back to My Active Group"):
         st.session_state.show_group_lobby = False
@@ -654,7 +707,7 @@ if st.session_state.active_group_id is None or st.session_state.show_group_lobby
     pending_my_groups = [g for g in user_groups if g["status"] == "PENDING"]
     if pending_my_groups:
         for pg in pending_my_groups:
-            st.warning(f"⏳ Your request to join **{pg['group_name']}** (`{pg['group_id']}`) is awaiting approval from the group owner.")
+            st.warning(f"⏳ Your request to join **{pg['group_name']}** is awaiting approval from the group owner.")
 
     st.divider()
     c_create, c_join = st.columns(2)
@@ -690,29 +743,43 @@ if st.session_state.active_group_id is None or st.session_state.show_group_lobby
     st.stop()
 
 # ==============================================================================
-# PHASE 3: RECENTLY JOINED GROUP FRONT PAGE (CLEAN HEADER + RIGHT PROFILE)
+# PHASE 3: ACTIVE GROUP FRONT PAGE
 # ==============================================================================
 active_gid = st.session_state.active_group_id
 group_info = get_group_details(active_gid)
+if not group_info:
+    st.session_state.active_group_id = None
+    st.rerun()
+
 is_owner = (group_info["owner_id"] == current_user["user_id"])
 
-# Top Bar: Active Group Title on Left | Invite Link & Profile Menu on Right
-hdr_left, hdr_share, hdr_profile = st.columns([6, 2, 2])
-with hdr_left:
-    role_tag = "👑 Owner" if is_owner else "👤 Member"
-    st.markdown(
-        f"<h2 style='margin:0;'>🏠 {group_info['group_name']} "
-        f"<span style='font-size:15px; color:#94a3b8; font-weight:normal;'>({role_tag} • Code: <code>{active_gid}</code>)</span></h2>",
-        unsafe_allow_html=True
-    )
-with hdr_share:
-    with st.popover("🔗 Invite Link", use_container_width=True):
-        st.markdown("**Share Group Link:**")
-        st.code(f"https://grocery-expenditure-m.streamlit.app/?join={active_gid}", language="text")
-        st.markdown("**Group Code:**")
-        st.code(active_gid, language="text")
-with hdr_profile:
-    render_profile_popover(current_user, user_groups, active_gid)
+# Top Bar: Only Owner sees the Invite Link button & code; everyone sees Profile on Right
+if is_owner:
+    hdr_left, hdr_share, hdr_profile = st.columns([6, 2, 2])
+    with hdr_left:
+        st.markdown(
+            f"<h2 style='margin:0;'>🏠 {group_info['group_name']} "
+            f"<span style='font-size:15px; color:#94a3b8; font-weight:normal;'>(👑 Owner)</span></h2>",
+            unsafe_allow_html=True
+        )
+    with hdr_share:
+        with st.popover("🔗 Share Group Link", use_container_width=True):
+            st.markdown("**Share Group Link:**")
+            st.code(f"https://grocery-expenditure-m.streamlit.app/?join={active_gid}", language="text")
+            st.markdown("**Group Invite Code:**")
+            st.code(active_gid, language="text")
+    with hdr_profile:
+        render_profile_popover(current_user, user_groups, active_gid, group_info)
+else:
+    hdr_left, hdr_profile = st.columns([8, 2])
+    with hdr_left:
+        st.markdown(
+            f"<h2 style='margin:0;'>🏠 {group_info['group_name']} "
+            f"<span style='font-size:15px; color:#94a3b8; font-weight:normal;'>(👤 Member)</span></h2>",
+            unsafe_allow_html=True
+        )
+    with hdr_profile:
+        render_profile_popover(current_user, user_groups, active_gid, group_info)
 
 # Owner Pending Approvals Banner
 if is_owner:
@@ -745,7 +812,6 @@ group_records = load_meal_records(active_gid)
 # ----------------- 1. GROUP HOME VIEW -----------------
 if st.session_state.current_view == "HOME":
     st.markdown("<h3 style='text-align: center; margin-top: 10px;'>🍽️ Mess Portal Dashboard</h3>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: gray;'>Select a section below</p>", unsafe_allow_html=True)
     st.write("")
 
     col1, col2, col3 = st.columns(3)
@@ -846,20 +912,21 @@ elif st.session_state.current_view == "EXPENDITURE":
     )
     st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
+    # Clean, blank Rupee input box (no prefilled 0, no extra instruction)
     with st.expander("➕ Add New Purchase / Expense", expanded=True):
         with st.form("purchase_form", clear_on_submit=True):
             col_d, col_item, col_buyer, col_amt = st.columns([2, 4, 3, 2])
             with col_d:
                 p_date = st.date_input("Date", value=date.today())
             with col_item:
-                p_item = st.text_input("Item Name", placeholder="e.g. Vegetables, Chicken, Masala, Oil")
+                p_item = st.text_input("Item Name")
             with col_buyer:
                 p_buyer = st.selectbox("Purchased By", active_members)
             with col_amt:
-                p_amount = st.number_input("Amount in Rupees (₹)", min_value=0, step=10, value=0, format="%d")
+                p_amount = st.number_input("₹ Amount", min_value=1, step=1, value=None, format="%d", placeholder="₹")
 
-            if st.form_submit_button("Record Purchase Entry (₹)", use_container_width=True, type="primary"):
-                if p_amount > 0 and p_item.strip():
+            if st.form_submit_button("Add Expense", use_container_width=True, type="primary"):
+                if p_amount is not None and p_amount > 0 and p_item.strip():
                     add_purchase(
                         active_gid,
                         p_date.strftime("%Y-%m-%d"),
@@ -873,7 +940,7 @@ elif st.session_state.current_view == "EXPENDITURE":
                     st.toast(f"Added ₹{int(p_amount):,} for {p_item.strip()}", icon="✅")
                     st.rerun()
                 else:
-                    st.error("Please enter an item name and an amount in ₹ greater than 0.")
+                    st.error("Please enter an item name and amount.")
 
     st.divider()
     st.markdown("### 📑 Individual Member Purchase Logs & Statements")
