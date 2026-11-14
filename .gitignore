@@ -1,3 +1,7 @@
+.streamlit/
+*.db
+*.sqlite3
 __pycache__/
-*.bak
-*.pyc
+.env
+venv/
+.venv/
