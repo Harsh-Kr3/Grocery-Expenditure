@@ -160,6 +160,7 @@ def log_activity(group_id: str, actor_name: str, actor_id: str, action_type: str
         (group_id, now_str(), actor_name, actor_id, action_type, details_str)
     )
 
+@st.cache_data(ttl=30)
 def load_activity_logs(group_id: str):
     return db_query(
         "SELECT id, timestamp, actor_name, actor_id, action_type, details FROM activity_logs WHERE group_id = ? ORDER BY id DESC",
@@ -217,13 +218,13 @@ def change_user_password(user_id: str, current_pwd: str, new_pwd: str):
     return True, "Password updated successfully!"
 
 def delete_entire_group(group_id: str):
-    """Permanently deletes a group and all associated records."""
     db_query("DELETE FROM meal_records WHERE group_id = ?", (group_id,))
     db_query("DELETE FROM group_slots WHERE group_id = ?", (group_id,))
     db_query("DELETE FROM purchases WHERE group_id = ?", (group_id,))
     db_query("DELETE FROM activity_logs WHERE group_id = ?", (group_id,))
     db_query("DELETE FROM group_memberships WHERE group_id = ?", (group_id,))
     db_query("DELETE FROM mess_groups WHERE group_id = ?", (group_id,))
+    st.cache_data.clear()
 
 def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_name: str):
     group_id = uuid.uuid4().hex[:8].upper()
@@ -252,6 +253,7 @@ def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_na
         "summary": f"Created group '{group_name.strip()}' ({max_members} slots)",
         "info": f"Group Owner: {owner_name} (@{owner_id})"
     })
+    st.cache_data.clear()
     return group_id
 
 def request_join_group(group_id: str, user_id: str, user_name: str):
@@ -277,6 +279,7 @@ def request_join_group(group_id: str, user_id: str, user_name: str):
         "summary": "Requested to join the group",
         "info": f"User {user_name} (@{user_id}) is awaiting approval."
     })
+    st.cache_data.clear()
     return True, "Join request sent to the group owner! Waiting for approval."
 
 def get_user_groups(user_id: str):
@@ -328,7 +331,6 @@ def approve_member(group_id: str, target_user_id: str, target_full_name: str, ow
         WHERE group_id = ? AND user_id = ?
     """, (assigned_slot, ts, group_id, target_user_id))
 
-    # Strictly lock the slot name to the approved account holder's registered full_name
     db_query(
         "UPDATE group_slots SET name = ? WHERE group_id = ? AND slot_id = ?",
         (target_full_name.strip(), group_id, assigned_slot)
@@ -338,6 +340,7 @@ def approve_member(group_id: str, target_user_id: str, target_full_name: str, ow
         "summary": f"Approved {target_full_name} into Slot #{assigned_slot + 1}",
         "info": f"Member @{target_user_id} approved by {owner_name}."
     })
+    st.cache_data.clear()
     return True, f"Approved {target_full_name} (Assigned to Slot #{assigned_slot + 1})"
 
 def reject_member(group_id: str, target_user_id: str, target_full_name: str, owner_name: str, owner_id: str):
@@ -346,10 +349,11 @@ def reject_member(group_id: str, target_user_id: str, target_full_name: str, own
         "summary": f"Rejected join request from {target_full_name}",
         "info": f"Request from @{target_user_id} was declined."
     })
+    st.cache_data.clear()
 
-# ----------------- MEAL & EXPENSE DB OPERATIONS (WITH STRICT ACCOUNT HOLDER NAME LOCK) -----------------
+# ----------------- CACHED MEAL & EXPENSE OPERATIONS -----------------
+@st.cache_data(ttl=30)
 def load_meal_records(group_id: str):
-    # Fetch slots and join directly with approved account holders so only account holder names appear
     slots = db_query("SELECT slot_id FROM group_slots WHERE group_id = ? ORDER BY slot_id ASC", (group_id,), fetch="all")
     approved_holders = db_query("""
         SELECT m.slot_id, u.full_name
@@ -377,10 +381,6 @@ def load_meal_records(group_id: str):
     return records
 
 def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_name: str, actor_id: str):
-    """
-    Saves only meal cell updates for slots occupied by approved account holders.
-    Slot names are strictly locked to account holders and cannot be altered by anyone.
-    """
     structured_changes = []
 
     for slot_id, new_rec in enumerate(new_records):
@@ -389,7 +389,6 @@ def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_
         old_rec = old_records[slot_id]
         locked_member_name = old_rec.get("name", "").strip()
 
-        # Ignore edits on unassigned/empty slots that have no account holder yet
         if not locked_member_name:
             continue
 
@@ -426,8 +425,10 @@ def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_
             "changes": structured_changes
         })
 
+    st.cache_data.clear()
     return len(structured_changes)
 
+@st.cache_data(ttl=30)
 def load_purchases(group_id: str):
     return db_query("SELECT id, date, item, buyer, amount FROM purchases WHERE group_id = ? ORDER BY id ASC", (group_id,), fetch="all")
 
@@ -446,6 +447,7 @@ def add_purchase(group_id: str, date_str: str, item: str, buyer: str, amount: in
             "date": date_str
         }
     )
+    st.cache_data.clear()
 
 def delete_last_purchase(group_id: str, actor_name: str, actor_id: str):
     last_row = db_query(
@@ -465,6 +467,7 @@ def delete_last_purchase(group_id: str, actor_name: str, actor_id: str):
                 "date": last_row["date"]
             }
         )
+        st.cache_data.clear()
         return last_row
     return None
 
@@ -482,7 +485,6 @@ mess_chart_editor = components.declare_component("mess_chart_editor", path=compo
 
 # ----------------- CALCULATION HELPER -----------------
 def calculate_member_meals(records):
-    """Calculates meals only for approved account holders on the chart."""
     member_meals = {}
     total_meals = 0.0
     for rec in records:
@@ -518,7 +520,6 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
         st.caption(f"**User ID:** `@{current_user['user_id']}`")
         st.divider()
 
-        # 1. Joined Groups List
         st.markdown("**🏘️ My Joined Groups**")
         if user_groups:
             for g in user_groups:
@@ -546,7 +547,6 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
 
         st.divider()
 
-        # 2. Change Password Section
         with st.expander("🔐 Change Password", expanded=False):
             with st.form("change_pwd_form", clear_on_submit=True):
                 curr_pwd = st.text_input("Current Password", type="password")
@@ -564,7 +564,6 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
                         else:
                             st.error(msg)
 
-        # 3. Owner-Only Option: Delete Active Group (Password + 2nd Verification)
         if active_group_info and active_group_info["owner_id"] == current_user["user_id"]:
             st.divider()
             with st.expander("🗑️ Delete Group", expanded=(st.session_state.delete_grp_step > 0)):
@@ -605,7 +604,6 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
 
         st.divider()
 
-        # 4. Logout Option
         if st.button("🚪 Logout", use_container_width=True, type="secondary"):
             st.session_state.user = None
             st.session_state.active_group_id = None
@@ -760,7 +758,6 @@ if not group_info:
 
 is_owner = (group_info["owner_id"] == current_user["user_id"])
 
-# Top Bar: Only Owner sees the Invite Link button & code; everyone sees Profile on Right
 if is_owner:
     hdr_left, hdr_share, hdr_profile = st.columns([6, 2, 2])
     with hdr_left:
@@ -788,7 +785,6 @@ else:
     with hdr_profile:
         render_profile_popover(current_user, user_groups, active_gid, group_info)
 
-# Owner Pending Approvals Banner
 if is_owner:
     pending_list = get_pending_requests(active_gid)
     if pending_list:
@@ -922,7 +918,6 @@ elif st.session_state.current_view == "EXPENDITURE":
         )
         st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
-    # Clean, blank Rupee input box (no prefilled 0, no extra instruction)
     with st.expander("➕ Add New Purchase / Expense", expanded=True):
         with st.form("purchase_form", clear_on_submit=True):
             col_d, col_item, col_buyer, col_amt = st.columns([2, 4, 3, 2])
