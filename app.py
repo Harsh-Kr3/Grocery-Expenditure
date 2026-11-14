@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import uuid
 import hashlib
@@ -11,14 +10,17 @@ import streamlit.components.v1 as components
 
 try:
     import psycopg2
-    from psycopg2.extras import RealDictCursor
+    from psycopg2 import pool
+    from psycopg2.extras import RealDictCursor, execute_values
 except ImportError:
     psycopg2 = None
+    pool = None
+    execute_values = None
 
 # ----------------- PAGE CONFIG -----------------
 st.set_page_config(
-    page_title="Hostel Mess Portal", 
-    page_icon="🍽️", 
+    page_title="Hostel Mess Portal",
+    page_icon="🍽️",
     layout="wide"
 )
 
@@ -27,7 +29,6 @@ DB_FILE = "mess_portal_v2.db"
 DAYS = [str(i) for i in range(1, 32)]
 MEALS = ["Nasta", "Lunch", "Dinner"]
 
-# Check if Cloud Database URL is configured in Streamlit Secrets or Env
 CLOUD_DB_URL = None
 try:
     if "DATABASE_URL" in st.secrets:
@@ -46,20 +47,65 @@ def hash_password(password: str) -> str:
 def now_str() -> str:
     return datetime.now().strftime("%d %b %Y, %I:%M %p")
 
-# ----------------- UNIVERSAL DATABASE ENGINE -----------------
-def get_connection():
+# ----------------- HIGH-SPEED PERSISTENT CONNECTION POOL -----------------
+@st.cache_resource
+def get_pg_pool():
+    """Keeps warm TCP/SSL connections alive across all Streamlit reruns."""
     if IS_CLOUD_DB:
-        return psycopg2.connect(CLOUD_DB_URL, cursor_factory=RealDictCursor)
-    else:
-        conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=CLOUD_DB_URL,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5
+        )
+    return None
+
+@st.cache_resource
+def get_sqlite_conn():
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def db_query(query: str, params=(), fetch="none"):
-    """Executes SQL seamlessly on both PostgreSQL (Supabase) and SQLite."""
+    """Executes SQL using a warm connection pool with auto-reconnect fallback."""
     if IS_CLOUD_DB:
-        query = query.replace("?", "%s")
-    with get_connection() as conn:
+        pg_Query = query.replace("?", "%s")
+        pg_pool = get_pg_pool()
+        for attempt in range(2):
+            conn = pg_pool.getconn()
+            try:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute(pg_Query, params)
+                    if fetch == "one":
+                        row = cursor.fetchone()
+                        conn.commit()
+                        result = dict(row) if row else None
+                    elif fetch == "all":
+                        rows = cursor.fetchall()
+                        conn.commit()
+                        result = [dict(r) for r in rows]
+                    else:
+                        conn.commit()
+                        result = None
+                pg_pool.putconn(conn)
+                return result
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                try:
+                    pg_pool.putconn(conn, close=True)
+                except Exception:
+                    pass
+                if attempt == 1:
+                    st.cache_resource.clear()
+                    raise
+            except Exception:
+                conn.rollback()
+                pg_pool.putconn(conn)
+                raise
+    else:
+        conn = get_sqlite_conn()
         cursor = conn.cursor()
         cursor.execute(query, params)
         if fetch == "one":
@@ -74,93 +120,177 @@ def db_query(query: str, params=(), fetch="none"):
             conn.commit()
             return None
 
-def init_db():
-    serial_type = "SERIAL PRIMARY KEY" if IS_CLOUD_DB else "INTEGER PRIMARY KEY AUTOINCREMENT"
-    
-    db_query("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY,
-            full_name TEXT NOT NULL,
-            password_hash TEXT NOT NULL
+def db_batch_upsert_meals(rows):
+    """Inserts/Updates hundreds of meal cells in a single network trip."""
+    if not rows:
+        return
+    if IS_CLOUD_DB:
+        pg_pool = get_pg_pool()
+        conn = pg_pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO meal_records (group_id, slot_id, meal_type, day, val)
+                    VALUES %s
+                    ON CONFLICT (group_id, slot_id, meal_type, day)
+                    DO UPDATE SET val = EXCLUDED.val
+                    """,
+                    rows
+                )
+            conn.commit()
+            pg_pool.putconn(conn)
+        except Exception:
+            conn.rollback()
+            pg_pool.putconn(conn)
+            raise
+    else:
+        conn = get_sqlite_conn()
+        cursor = conn.cursor()
+        cursor.executemany(
+            """
+            INSERT INTO meal_records (group_id, slot_id, meal_type, day, val)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(group_id, slot_id, meal_type, day)
+            DO UPDATE SET val = excluded.val
+            """,
+            rows
         )
-    """)
-    db_query("""
-        CREATE TABLE IF NOT EXISTS mess_groups (
-            group_id TEXT PRIMARY KEY,
-            group_name TEXT NOT NULL,
-            max_members INTEGER NOT NULL,
-            owner_id TEXT NOT NULL
-        )
-    """)
-    db_query("""
-        CREATE TABLE IF NOT EXISTS group_memberships (
-            group_id TEXT,
-            user_id TEXT,
-            status TEXT NOT NULL,
-            slot_id INTEGER,
-            joined_at TEXT,
-            PRIMARY KEY (group_id, user_id)
-        )
-    """)
-    try:
-        db_query("ALTER TABLE group_memberships ADD COLUMN joined_at TEXT")
-    except Exception:
-        pass
+        conn.commit()
 
-    db_query("""
-        CREATE TABLE IF NOT EXISTS group_slots (
-            group_id TEXT,
-            slot_id INTEGER,
-            name TEXT NOT NULL,
-            PRIMARY KEY (group_id, slot_id)
-        )
-    """)
-    db_query("""
-        CREATE TABLE IF NOT EXISTS meal_records (
-            group_id TEXT,
-            slot_id INTEGER,
-            meal_type TEXT,
-            day TEXT,
-            val TEXT,
-            PRIMARY KEY (group_id, slot_id, meal_type, day)
-        )
-    """)
-    db_query(f"""
-        CREATE TABLE IF NOT EXISTS purchases (
-            id {serial_type},
-            group_id TEXT NOT NULL,
-            date TEXT NOT NULL,
-            item TEXT NOT NULL,
-            buyer TEXT NOT NULL,
-            amount REAL NOT NULL
-        )
-    """)
-    db_query(f"""
-        CREATE TABLE IF NOT EXISTS activity_logs (
-            id {serial_type},
-            group_id TEXT NOT NULL,
-            timestamp TEXT NOT NULL,
-            actor_name TEXT NOT NULL,
-            actor_id TEXT NOT NULL,
-            action_type TEXT NOT NULL,
-            details TEXT NOT NULL
-        )
-    """)
+# ----------------- ONE-TIME SCHEMA INITIALIZATION -----------------
+@st.cache_resource
+def init_db_once():
+    """Runs ONLY ONCE when the server starts instead of every button click."""
+    if IS_CLOUD_DB:
+        pg_pool = get_pg_pool()
+        conn = pg_pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        user_id TEXT PRIMARY KEY,
+                        full_name TEXT NOT NULL,
+                        password_hash TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS mess_groups (
+                        group_id TEXT PRIMARY KEY,
+                        group_name TEXT NOT NULL,
+                        max_members INTEGER NOT NULL,
+                        owner_id TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS group_memberships (
+                        group_id TEXT,
+                        user_id TEXT,
+                        status TEXT NOT NULL,
+                        slot_id INTEGER,
+                        joined_at TEXT,
+                        PRIMARY KEY (group_id, user_id)
+                    );
+                    CREATE TABLE IF NOT EXISTS group_slots (
+                        group_id TEXT,
+                        slot_id INTEGER,
+                        name TEXT NOT NULL,
+                        PRIMARY KEY (group_id, slot_id)
+                    );
+                    CREATE TABLE IF NOT EXISTS meal_records (
+                        group_id TEXT,
+                        slot_id INTEGER,
+                        meal_type TEXT,
+                        day TEXT,
+                        val TEXT,
+                        PRIMARY KEY (group_id, slot_id, meal_type, day)
+                    );
+                    CREATE TABLE IF NOT EXISTS purchases (
+                        id SERIAL PRIMARY KEY,
+                        group_id TEXT NOT NULL,
+                        date TEXT NOT NULL,
+                        item TEXT NOT NULL,
+                        buyer TEXT NOT NULL,
+                        amount REAL NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS activity_logs (
+                        id SERIAL PRIMARY KEY,
+                        group_id TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        actor_name TEXT NOT NULL,
+                        actor_id TEXT NOT NULL,
+                        action_type TEXT NOT NULL,
+                        details TEXT NOT NULL
+                    );
+                """)
+            conn.commit()
+        finally:
+            pg_pool.putconn(conn)
+    else:
+        conn = get_sqlite_conn()
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                full_name TEXT NOT NULL,
+                password_hash TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS mess_groups (
+                group_id TEXT PRIMARY KEY,
+                group_name TEXT NOT NULL,
+                max_members INTEGER NOT NULL,
+                owner_id TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS group_memberships (
+                group_id TEXT,
+                user_id TEXT,
+                status TEXT NOT NULL,
+                slot_id INTEGER,
+                joined_at TEXT,
+                PRIMARY KEY (group_id, user_id)
+            );
+            CREATE TABLE IF NOT EXISTS group_slots (
+                group_id TEXT,
+                slot_id INTEGER,
+                name TEXT NOT NULL,
+                PRIMARY KEY (group_id, slot_id)
+            );
+            CREATE TABLE IF NOT EXISTS meal_records (
+                group_id TEXT,
+                slot_id INTEGER,
+                meal_type TEXT,
+                day TEXT,
+                val TEXT,
+                PRIMARY KEY (group_id, slot_id, meal_type, day)
+            );
+            CREATE TABLE IF NOT EXISTS purchases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                item TEXT NOT NULL,
+                buyer TEXT NOT NULL,
+                amount REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS activity_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                actor_name TEXT NOT NULL,
+                actor_id TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                details TEXT NOT NULL
+            );
+        """)
+        conn.commit()
+    return True
 
-init_db()
+init_db_once()
 
 # ----------------- AUDIT LOGGING HELPER -----------------
 def log_activity(group_id: str, actor_name: str, actor_id: str, action_type: str, details_obj):
-    if isinstance(details_obj, (dict, list)):
-        details_str = json.dumps(details_obj)
-    else:
-        details_str = str(details_obj)
+    details_str = json.dumps(details_obj) if isinstance(details_obj, (dict, list)) else str(details_obj)
     db_query(
         "INSERT INTO activity_logs (group_id, timestamp, actor_name, actor_id, action_type, details) VALUES (?, ?, ?, ?, ?, ?)",
         (group_id, now_str(), actor_name, actor_id, action_type, details_str)
     )
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=120, show_spinner=False)
 def load_activity_logs(group_id: str):
     return db_query(
         "SELECT id, timestamp, actor_name, actor_id, action_type, details FROM activity_logs WHERE group_id = ? ORDER BY id DESC",
@@ -224,6 +354,7 @@ def delete_entire_group(group_id: str):
     db_query("DELETE FROM activity_logs WHERE group_id = ?", (group_id,))
     db_query("DELETE FROM group_memberships WHERE group_id = ?", (group_id,))
     db_query("DELETE FROM mess_groups WHERE group_id = ?", (group_id,))
+    st.session_state.pop(f"local_chart_cache_{group_id}", None)
     st.cache_data.clear()
 
 def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_name: str):
@@ -237,6 +368,8 @@ def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_na
         "INSERT INTO group_memberships (group_id, user_id, status, slot_id, joined_at) VALUES (?, ?, 'APPROVED', 0, ?)",
         (group_id, owner_id, ts)
     )
+
+    meal_rows = []
     for i in range(int(max_members)):
         initial_name = owner_name.strip() if i == 0 else ""
         db_query(
@@ -244,11 +377,13 @@ def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_na
             (group_id, i, initial_name)
         )
         for m in MEALS:
+            default_val = "x" if m == "Nasta" else ""
             for d in DAYS:
-                db_query(
-                    "INSERT INTO meal_records (group_id, slot_id, meal_type, day, val) VALUES (?, ?, ?, ?, ?)",
-                    (group_id, i, m, d, "x" if m == "Nasta" else "")
-                )
+                meal_rows.append((group_id, i, m, d, default_val))
+
+    # Single bulk insert instead of 465+ individual queries
+    db_batch_upsert_meals(meal_rows)
+
     log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", {
         "summary": f"Created group '{group_name.strip()}' ({max_members} slots)",
         "info": f"Group Owner: {owner_name} (@{owner_id})"
@@ -282,6 +417,7 @@ def request_join_group(group_id: str, user_id: str, user_name: str):
     st.cache_data.clear()
     return True, "Join request sent to the group owner! Waiting for approval."
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_user_groups(user_id: str):
     rows = db_query("""
         SELECT g.group_id, g.group_name, g.max_members, g.owner_id, m.status, m.slot_id, m.joined_at
@@ -292,9 +428,11 @@ def get_user_groups(user_id: str):
     rows.sort(key=lambda r: (r.get("joined_at") or ""), reverse=True)
     return rows
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_group_details(group_id: str):
     return db_query("SELECT * FROM mess_groups WHERE group_id = ?", (group_id,), fetch="one")
 
+@st.cache_data(ttl=60, show_spinner=False)
 def get_pending_requests(group_id: str):
     return db_query("""
         SELECT m.user_id, u.full_name
@@ -340,6 +478,7 @@ def approve_member(group_id: str, target_user_id: str, target_full_name: str, ow
         "summary": f"Approved {target_full_name} into Slot #{assigned_slot + 1}",
         "info": f"Member @{target_user_id} approved by {owner_name}."
     })
+    st.session_state.pop(f"local_chart_cache_{group_id}", None)
     st.cache_data.clear()
     return True, f"Approved {target_full_name} (Assigned to Slot #{assigned_slot + 1})"
 
@@ -351,9 +490,9 @@ def reject_member(group_id: str, target_user_id: str, target_full_name: str, own
     })
     st.cache_data.clear()
 
-# ----------------- CACHED MEAL & EXPENSE OPERATIONS -----------------
-@st.cache_data(ttl=30)
-def load_meal_records(group_id: str):
+# ----------------- INSTANT CACHED MEAL & EXPENSE OPERATIONS -----------------
+@st.cache_data(ttl=120, show_spinner=False)
+def _fetch_meal_records_from_db(group_id: str):
     slots = db_query("SELECT slot_id FROM group_slots WHERE group_id = ? ORDER BY slot_id ASC", (group_id,), fetch="all")
     approved_holders = db_query("""
         SELECT m.slot_id, u.full_name
@@ -380,14 +519,25 @@ def load_meal_records(group_id: str):
         records.append({"name": locked_account_name, "meals": meals_dict})
     return records
 
+def load_meal_records(group_id: str):
+    cache_key = f"local_chart_cache_{group_id}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    records = _fetch_meal_records_from_db(group_id)
+    st.session_state[cache_key] = records
+    return records
+
 def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_name: str, actor_id: str):
     structured_changes = []
+    batch_rows = []
+    cache_key = f"local_chart_cache_{group_id}"
 
     for slot_id, new_rec in enumerate(new_records):
         if slot_id >= len(old_records):
             continue
         old_rec = old_records[slot_id]
         locked_member_name = old_rec.get("name", "").strip()
+        new_rec["name"] = locked_member_name
 
         if not locked_member_name:
             continue
@@ -411,24 +561,24 @@ def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_
                         "old": old_val if old_val != "" else "(blank)",
                         "new": new_val if new_val != "" else "(blank)"
                     })
-                    db_query("""
-                        INSERT INTO meal_records (group_id, slot_id, meal_type, day, val)
-                        VALUES (?, ?, ?, ?, ?)
-                        ON CONFLICT(group_id, slot_id, meal_type, day) DO UPDATE SET val = excluded.val
-                    """, (group_id, slot_id, meal, d, new_val))
+                    batch_rows.append((group_id, slot_id, meal, d, new_val))
 
-    if structured_changes:
+    if batch_rows:
+        # Update session memory immediately and send 1 batched query to Supabase
+        st.session_state[cache_key] = new_records
+        db_batch_upsert_meals(batch_rows)
         affected_members = list(dict.fromkeys(c["member"] for c in structured_changes))
         short_summary = f"Updated {len(structured_changes)} chart cell(s) ({', '.join(affected_members[:2])})"
         log_activity(group_id, actor_name, actor_id, "MEAL_UPDATE", {
             "summary": short_summary,
             "changes": structured_changes
         })
+        _fetch_meal_records_from_db.clear()
+        load_activity_logs.clear()
 
-    st.cache_data.clear()
     return len(structured_changes)
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=120, show_spinner=False)
 def load_purchases(group_id: str):
     return db_query("SELECT id, date, item, buyer, amount FROM purchases WHERE group_id = ? ORDER BY id ASC", (group_id,), fetch="all")
 
@@ -447,7 +597,8 @@ def add_purchase(group_id: str, date_str: str, item: str, buyer: str, amount: in
             "date": date_str
         }
     )
-    st.cache_data.clear()
+    load_purchases.clear()
+    load_activity_logs.clear()
 
 def delete_last_purchase(group_id: str, actor_name: str, actor_id: str):
     last_row = db_query(
@@ -467,7 +618,8 @@ def delete_last_purchase(group_id: str, actor_name: str, actor_id: str):
                 "date": last_row["date"]
             }
         )
-        st.cache_data.clear()
+        load_purchases.clear()
+        load_activity_logs.clear()
         return last_row
     return None
 
@@ -517,7 +669,8 @@ def calculate_member_meals(records):
 def render_profile_popover(current_user, user_groups, active_gid, active_group_info=None):
     with st.popover(f"👤 {current_user['full_name']}", use_container_width=True):
         st.markdown(f"### 👤 {current_user['full_name']}")
-        st.caption(f"**User ID:** `@{current_user['user_id']}`")
+        db_badge = "☁️ Cloud DB Connected" if IS_CLOUD_DB else "💻 Local SQLite Mode"
+        st.caption(f"**User ID:** `@{current_user['user_id']}` • {db_badge}")
         st.divider()
 
         st.markdown("**🏘️ My Joined Groups**")
@@ -543,6 +696,12 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
         if st.button("➕ Create / Join Another Group", use_container_width=True):
             st.session_state.show_group_lobby = True
             st.session_state.delete_grp_step = 0
+            st.rerun()
+
+        if st.button("🔄 Sync Latest Cloud Data", use_container_width=True):
+            if active_gid:
+                st.session_state.pop(f"local_chart_cache_{active_gid}", None)
+            st.cache_data.clear()
             st.rerun()
 
         st.divider()
@@ -810,7 +969,6 @@ if is_owner:
                     st.rerun()
 
 st.divider()
-group_records = load_meal_records(active_gid)
 
 # ----------------- 1. GROUP HOME VIEW -----------------
 if st.session_state.current_view == "HOME":
@@ -834,6 +992,7 @@ if st.session_state.current_view == "HOME":
 
 # ----------------- 2. MESS MEAL CHART VIEW -----------------
 elif st.session_state.current_view == "MEAL_CHART":
+    group_records = load_meal_records(active_gid)
     top1, top2 = st.columns([1, 8])
     with top1:
         if st.button("⬅️ Back"):
@@ -865,6 +1024,7 @@ elif st.session_state.current_view == "MEAL_CHART":
 
 # ----------------- 3. MESS EXPENDITURE VIEW -----------------
 elif st.session_state.current_view == "EXPENDITURE":
+    group_records = load_meal_records(active_gid)
     top1, top2 = st.columns([1, 8])
     with top1:
         if st.button("⬅️ Back"):
