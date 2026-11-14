@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import zlib
+import html
 import base64
 import hashlib
 import sqlite3
@@ -26,13 +27,28 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ----------------- AESTHETIC ANIMATED UI & PROFESSIONAL CSS -----------------
+# ----------------- ROYAL AESTHETIC CSS (DEEP AUBERGINE, ICE SILVER, MARIGOLD) -----------------
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-html, body, [class*="css"] {
+:root {
+    --aubergine-dark: #12071F;
+    --aubergine-mid: #1F0D35;
+    --aubergine-card: #281244;
+    --aubergine-light: #3B1C63;
+    --ice-silver: #E2E8F0;
+    --ice-bright: #F8FAFC;
+    --ice-muted: #94A3B8;
+    --marigold: #F59E0B;
+    --marigold-bright: #FBBF24;
+    --marigold-deep: #D97706;
+}
+
+html, body, [class*="css"], .stApp {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    background: radial-gradient(circle at 50% 0%, #261142 0%, #140824 55%, #0D0417 100%) !important;
+    color: var(--ice-silver) !important;
 }
 
 #MainMenu {visibility: hidden;}
@@ -40,77 +56,75 @@ footer {visibility: hidden;}
 header {background: transparent !important;}
 
 .block-container {
-    padding-top: 2rem !important;
+    padding-top: 1.8rem !important;
     padding-bottom: 3rem !important;
-    max-width: 1380px !important;
+    max-width: 1360px !important;
 }
 
-@keyframes fadeSlideUp {
-    0% { opacity: 0; transform: translateY(14px); }
+@keyframes fadeInSmooth {
+    0% { opacity: 0; transform: translateY(8px); }
     100% { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pulseGlow {
-    0%, 100% { box-shadow: 0 0 15px rgba(59, 130, 246, 0.18); }
-    50% { box-shadow: 0 0 25px rgba(99, 102, 241, 0.35); }
-}
-
 div[data-testid="stVerticalBlock"] > div {
-    animation: fadeSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: fadeInSmooth 0.28s ease-out forwards;
 }
 
-/* Hero Banner & Group Header */
+/* Royal Hero Banner */
 .portal-hero {
     text-align: center;
-    padding: 2.2rem 1rem 1.6rem 1rem;
-    margin-bottom: 1.5rem;
-    background: radial-gradient(circle at top, rgba(30, 58, 138, 0.35), rgba(15, 23, 42, 0.4));
-    border: 1px solid rgba(148, 163, 184, 0.14);
+    padding: 2.2rem 1.5rem;
+    margin-bottom: 1.6rem;
+    background: linear-gradient(135deg, rgba(40, 18, 68, 0.88) 0%, rgba(20, 8, 36, 0.95) 100%);
+    border: 1px solid rgba(226, 232, 240, 0.16);
+    border-bottom: 2px solid var(--marigold);
     border-radius: 18px;
-    animation: pulseGlow 5s infinite ease-in-out;
+    box-shadow: 0 14px 34px -8px rgba(0, 0, 0, 0.55);
 }
 
 .portal-hero h1 {
-    font-size: 2.4rem !important;
+    font-size: 2.3rem !important;
     font-weight: 800 !important;
-    letter-spacing: -0.03em !important;
+    letter-spacing: 0.04em !important;
     margin: 0 !important;
-    background: linear-gradient(135deg, #ffffff 0%, #93c5fd 55%, #818cf8 100%);
+    background: linear-gradient(90deg, #F8FAFC 0%, #E2E8F0 45%, #FBBF24 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
+/* Workspace Header Card */
 .group-header-card {
-    background: linear-gradient(135deg, rgba(30, 41, 59, 0.78) 0%, rgba(15, 23, 42, 0.92) 100%);
-    border: 1px solid rgba(148, 163, 184, 0.15);
-    border-radius: 16px;
-    padding: 1.15rem 1.5rem;
+    background: linear-gradient(135deg, rgba(40, 18, 68, 0.9) 0%, rgba(23, 9, 41, 0.95) 100%);
+    border: 1px solid rgba(226, 232, 240, 0.15);
+    border-left: 4px solid var(--marigold);
+    border-radius: 14px;
+    padding: 1rem 1.4rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 12px;
-    box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 10px 26px -6px rgba(0, 0, 0, 0.5);
 }
 
 .group-title-text {
-    font-size: 1.65rem;
+    font-size: 1.55rem;
     font-weight: 800;
-    color: #f8fafc;
-    letter-spacing: -0.02em;
+    color: var(--ice-bright);
+    letter-spacing: -0.01em;
     margin: 0;
 }
 
 .role-pill {
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    padding: 4px 10px;
+    padding: 4px 11px;
     border-radius: 999px;
-    background: rgba(59, 130, 246, 0.16);
-    color: #93c5fd;
-    border: 1px solid rgba(59, 130, 246, 0.32);
+    background: rgba(226, 232, 240, 0.1);
+    color: var(--ice-silver);
+    border: 1px solid rgba(226, 232, 240, 0.25);
     margin-left: 10px;
     vertical-align: middle;
 }
@@ -119,87 +133,111 @@ div[data-testid="stVerticalBlock"] > div {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: linear-gradient(90deg, #1d4ed8 0%, #4338ca 100%);
-    color: #ffffff;
+    background: linear-gradient(135deg, var(--marigold) 0%, var(--marigold-deep) 100%);
+    color: #12071F;
     padding: 5px 14px;
     border-radius: 999px;
-    font-weight: 700;
-    font-size: 0.8rem;
-    letter-spacing: 0.04em;
-    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+    font-weight: 800;
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
+    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);
 }
 
 /* Buttons */
-.stButton > button, .stDownloadButton > button {
-    border-radius: 12px !important;
+.stButton > button, .stDownloadButton > button, div[data-testid="stPopover"] > button {
+    border-radius: 11px !important;
     font-weight: 700 !important;
-    padding: 0.65rem 1.2rem !important;
-    border: 1px solid rgba(148, 163, 184, 0.18) !important;
-    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    padding: 0.62rem 1.15rem !important;
+    background: rgba(40, 18, 68, 0.75) !important;
+    color: var(--ice-bright) !important;
+    border: 1px solid rgba(226, 232, 240, 0.2) !important;
+    transition: all 0.2s ease !important;
 }
 
-.stButton > button:hover, .stDownloadButton > button:hover {
+.stButton > button:hover, .stDownloadButton > button:hover, div[data-testid="stPopover"] > button:hover {
     transform: translateY(-2px) !important;
-    box-shadow: 0 8px 20px -4px rgba(37, 99, 235, 0.35) !important;
-    border-color: rgba(96, 165, 250, 0.5) !important;
+    border-color: var(--marigold-bright) !important;
+    box-shadow: 0 6px 18px -4px rgba(245, 158, 11, 0.28) !important;
+    color: var(--marigold-bright) !important;
 }
 
 .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {
-    background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%) !important;
-    color: #ffffff !important;
+    background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%) !important;
+    color: #12071F !important;
     border: none !important;
+    font-weight: 800 !important;
+}
+
+.stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #FBBF24 0%, #F59E0B 100%) !important;
+    color: #0D0417 !important;
+    box-shadow: 0 8px 22px -4px rgba(245, 158, 11, 0.45) !important;
 }
 
 /* Metric Cards */
 div[data-testid="stMetric"] {
-    background: linear-gradient(145deg, rgba(30, 41, 59, 0.68), rgba(15, 23, 42, 0.88));
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    border-radius: 16px;
-    padding: 1.2rem 1.4rem !important;
-    box-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.35);
-    transition: transform 0.22s ease, border-color 0.22s ease;
+    background: linear-gradient(145deg, rgba(40, 18, 68, 0.78), rgba(22, 9, 39, 0.92));
+    border: 1px solid rgba(226, 232, 240, 0.14);
+    border-top: 2px solid rgba(245, 158, 11, 0.55);
+    border-radius: 14px;
+    padding: 1.15rem 1.35rem !important;
+    box-shadow: 0 8px 22px -6px rgba(0, 0, 0, 0.45);
+    transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
 div[data-testid="stMetric"]:hover {
-    transform: translateY(-3px);
-    border-color: rgba(59, 130, 246, 0.45);
+    transform: translateY(-2px);
+    border-color: var(--marigold);
+}
+
+div[data-testid="stMetricValue"] {
+    color: var(--ice-bright) !important;
+    font-weight: 800 !important;
+}
+
+div[data-testid="stMetricLabel"] {
+    color: var(--ice-silver) !important;
 }
 
 /* Containers, Expanders & Tabs */
-div[data-testid="stExpander"] {
+div[data-testid="stExpander"], div[data-testid="stVerticalBlockBorderWrapper"] {
     border-radius: 14px !important;
-    border: 1px solid rgba(148, 163, 184, 0.15) !important;
-    background: rgba(15, 23, 42, 0.45) !important;
-    overflow: hidden;
+    border-color: rgba(226, 232, 240, 0.15) !important;
+    background: rgba(28, 12, 48, 0.55) !important;
 }
 
 .stTabs [data-baseweb="tab-list"] {
     gap: 8px;
-    background: rgba(15, 23, 42, 0.55);
+    background: rgba(20, 8, 36, 0.75);
     padding: 6px;
     border-radius: 12px;
-    border: 1px solid rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(226, 232, 240, 0.14);
 }
 
 .stTabs [data-baseweb="tab"] {
     border-radius: 8px;
     padding: 8px 18px;
     font-weight: 700;
+    color: var(--ice-silver) !important;
 }
 
 .stTabs [aria-selected="true"] {
-    background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%) !important;
-    color: white !important;
+    background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%) !important;
+    color: #12071F !important;
+    font-weight: 800 !important;
 }
 
 /* Inputs */
 div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
     border-radius: 10px !important;
+    background-color: rgba(18, 7, 31, 0.8) !important;
+    border-color: rgba(226, 232, 240, 0.2) !important;
+    color: var(--ice-bright) !important;
 }
 
 hr {
-    margin: 1.4rem 0 !important;
-    border-color: rgba(148, 163, 184, 0.12) !important;
+    margin: 1.3rem 0 !important;
+    border-color: rgba(226, 232, 240, 0.12) !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -396,16 +434,7 @@ def generate_compact_mess_pdf(group_name: str, group_id: str, month_label: str, 
 
 def trigger_local_pdf_download(pdf_bytes: bytes, filename: str):
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-    dl_html = f"""
-    <html>
-    <body>
-        <a id="auto_pdf_dl" href="data:application/pdf;base64,{b64}" download="{filename}"></a>
-        <script>
-            document.getElementById('auto_pdf_dl').click();
-        </script>
-    </body>
-    </html>
-    """
+    dl_html = f'<html><body><a id="auto_pdf_dl" href="data:application/pdf;base64,{b64}" download="{filename}"></a><script>document.getElementById("auto_pdf_dl").click();</script></body></html>'
     components.html(dl_html, height=0, width=0)
 
 # ----------------- HIGH-SPEED PERSISTENT CONNECTION POOL -----------------
@@ -616,7 +645,7 @@ def scope_gid(group_id: str, cycle_key: str) -> str:
     return group_id if (not cycle_key or cycle_key == "INITIAL") else f"{group_id}__{cycle_key}"
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_group_Open_months(group_id: str):
+def get_group_open_months(group_id: str):
     rows = db_query(
         "SELECT id, group_id, cycle_key, start_month, start_year, display_label, status, created_at FROM group_months WHERE group_id = ? ORDER BY id ASC",
         (group_id,),
@@ -639,7 +668,7 @@ def get_group_Open_months(group_id: str):
     return rows
 
 def create_new_month_cycle(group_id: str, start_month: str, start_year: int, owner_name: str, owner_id: str):
-    months = get_group_Open_months(group_id)
+    months = get_group_open_months(group_id)
     prev_months = [m for m in months if m["status"] == "PREVIOUS"]
 
     for old_pm in prev_months:
@@ -736,7 +765,7 @@ def archive_and_delete_previous_month(group_id: str, group_name: str, prev_month
 
     log_activity(active_sgid, owner_name, owner_id, "GROUP_ADMIN", {
         "summary": f"Archived & Closed Previous Cycle ({final_month_label})",
-        "info": f"PDF statement archived and previous cycle records cleared."
+        "info": "PDF statement archived and previous cycle records cleared."
     })
     st.cache_data.clear()
     return pdf_bytes, file_name, size_bytes, final_month_label
@@ -1280,11 +1309,7 @@ if st.session_state.pending_auto_pdf:
 # PHASE 1: AUTHENTICATION
 # ==============================================================================
 if st.session_state.user is None:
-    st.markdown("""
-    <div class="portal-hero">
-        <h1>HOSTEL MESS PORTAL</h1>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="portal-hero"><h1>HOSTEL MESS PORTAL</h1></div>', unsafe_allow_html=True)
 
     if invite_code_param:
         grp_info = get_group_details(invite_code_param)
@@ -1412,7 +1437,7 @@ if not group_info:
 
 is_owner = (group_info["owner_id"] == current_user["user_id"])
 
-open_months = get_group_Open_months(active_gid)
+open_months = get_group_open_months(active_gid)
 active_month_row = next((m for m in open_months if m["status"] == "ACTIVE"), open_months[-1])
 prev_month_row = next((m for m in open_months if m["status"] == "PREVIOUS"), None)
 
@@ -1431,22 +1456,19 @@ live_month_denotation = get_dynamic_month_label(
 )
 
 role_text = "Owner" if is_owner else "Member"
+safe_grp_title = html.escape(group_info["group_name"])
+safe_month_pill = html.escape(live_month_denotation.upper())
+header_card_html = (
+    f'<div class="group-header-card">'
+    f'<div><span class="group-title-text">{safe_grp_title}</span><span class="role-pill">{role_text}</span></div>'
+    f'<div class="cycle-pill">📊 {safe_month_pill}</div>'
+    f'</div>'
+)
 
 if is_owner:
     hdr_left, hdr_share, hdr_profile = st.columns([6.4, 1.8, 1.8])
     with hdr_left:
-        st.markdown(
-            f"""
-            <div class="group-header-card">
-                <div>
-                    <span class="group-title-text">{group_info['group_name']}</span>
-                    <span class="role-pill">{role_text}</span>
-                </div>
-                <div class="cycle-pill">📊 {live_month_denotation.upper()}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.markdown(header_card_html, unsafe_allow_html=True)
     with hdr_share:
         with st.popover("**Invite Members**", use_container_width=True):
             st.markdown("**Invite Link**")
@@ -1458,18 +1480,7 @@ if is_owner:
 else:
     hdr_left, hdr_profile = st.columns([8, 2])
     with hdr_left:
-        st.markdown(
-            f"""
-            <div class="group-header-card">
-                <div>
-                    <span class="group-title-text">{group_info['group_name']}</span>
-                    <span class="role-pill">{role_text}</span>
-                </div>
-                <div class="cycle-pill">📊 {live_month_denotation.upper()}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.markdown(header_card_html, unsafe_allow_html=True)
     with hdr_profile:
         render_profile_popover(current_user, user_groups, active_gid, group_info)
 
@@ -1603,7 +1614,7 @@ if st.session_state.current_view == "HOME":
             st.session_state.confirm_delete_expense = False
             st.rerun()
     with col3:
-        if st.button("**ACTIVITY LOGS**", use_container_width=True):
+        if st.button("📊 **ACTIVITY LOGS**", use_container_width=True):
             st.session_state.current_view = "HISTORY"
             st.rerun()
     with col4:
@@ -1692,7 +1703,7 @@ elif st.session_state.current_view == "EXPENDITURE":
     df_summary = pd.DataFrame(summary_rows)
     if not df_summary.empty:
         styled_summary = df_summary.style.map(
-            lambda val: f"color: {'#22c55e' if val >= 0 else '#ef4444'}; font-weight: 700;",
+            lambda val: f"color: {'#FBBF24' if val >= 0 else '#F87171'}; font-weight: 800;",
             subset=["Net Balance (₹)"]
         )
         st.dataframe(styled_summary, use_container_width=True, hide_index=True)
@@ -1783,7 +1794,7 @@ elif st.session_state.current_view == "EXPENDITURE":
                 use_container_width=True
             )
 
-# ----------------- 4. ACTIVITY LOGS & DIFF INSPECTOR -----------------
+# ----------------- 4. ACTIVITY LOGS & DIFF INSPECTOR (ZERO CODE LEAK) -----------------
 elif st.session_state.current_view == "HISTORY":
     top1, top2 = st.columns([1.2, 8.8])
     with top1:
@@ -1841,25 +1852,32 @@ elif st.session_state.current_view == "HISTORY":
                 if act_type == "MEAL_UPDATE":
                     changes = parsed_sel.get("changes", [])
                     if changes:
-                        cards_html = "<div style='display:flex; flex-direction:column; gap:10px; margin-bottom:18px;'>"
+                        cards_parts = ["<div style='display:flex;flex-direction:column;gap:10px;margin-bottom:18px;'>"]
                         for ch in changes:
-                            day_badge = f"Day {ch['day']}" if ch.get("day") != "-" else "Member"
-                            cards_html += f"""
-                            <div style="background:#1e293b; border-left:4px solid #3b82f6; padding:12px 16px; border-radius:10px; display:flex; justify-content:space-between; align-items:center; color:#f8fafc;">
-                                <div>
-                                    <span style="background:#2563eb; color:white; padding:3px 10px; border-radius:6px; font-size:12px; font-weight:800; margin-right:8px;">{ch.get('member')}</span>
-                                    <span style="font-weight:700; font-size:14px; color:#e2e8f0;">{ch.get('meal')}</span>
-                                    <span style="color:#93c5fd; font-weight:700; margin-left:8px;">({day_badge})</span>
-                                </div>
-                                <div style="display:flex; align-items:center; gap:10px;">
-                                    <span style="background:#7f1d1d; color:#fca5a5; padding:4px 10px; border-radius:6px; text-decoration:line-through; font-weight:700;">{ch.get('old')}</span>
-                                    <span style="color:#94a3b8; font-weight:bold;">→</span>
-                                    <span style="background:#14532d; color:#86efac; padding:4px 12px; border-radius:6px; font-weight:800; border:1px solid #22c55e;">{ch.get('new')}</span>
-                                </div>
-                            </div>
-                            """
-                        cards_html += "</div>"
-                        st.markdown(cards_html, unsafe_allow_html=True)
+                            m_str = html.escape(str(ch.get("member", "")))
+                            meal_str = html.escape(str(ch.get("meal", "")))
+                            day_val = str(ch.get("day", "-"))
+                            day_badge = f"Day {html.escape(day_val)}" if day_val != "-" else "Member"
+                            old_str = html.escape(str(ch.get("old", "")))
+                            new_str = html.escape(str(ch.get("new", "")))
+
+                            row_html = (
+                                f"<div style='background:#24103E;border:1px solid rgba(226,232,240,0.14);border-left:4px solid #F59E0B;padding:12px 16px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;color:#F8FAFC;'>"
+                                f"<div>"
+                                f"<span style='background:#F59E0B;color:#12071F;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:800;margin-right:8px;'>{m_str}</span>"
+                                f"<span style='font-weight:700;font-size:14px;color:#E2E8F0;'>{meal_str}</span>"
+                                f"<span style='color:#FBBF24;font-weight:700;margin-left:8px;'>({day_badge})</span>"
+                                f"</div>"
+                                f"<div style='display:flex;align-items:center;gap:10px;'>"
+                                f"<span style='background:rgba(127,29,29,0.7);color:#FCA5A5;padding:4px 10px;border-radius:6px;text-decoration:line-through;font-weight:700;'>{old_str}</span>"
+                                f"<span style='color:#94A3B8;font-weight:bold;'>→</span>"
+                                f"<span style='background:rgba(245,158,11,0.2);color:#FBBF24;padding:4px 12px;border-radius:6px;font-weight:800;border:1px solid #F59E0B;'>{new_str}</span>"
+                                f"</div>"
+                                f"</div>"
+                            )
+                            cards_parts.append(row_html)
+                        cards_parts.append("</div>")
+                        st.markdown("".join(cards_parts), unsafe_allow_html=True)
 
                         cell_changes = [c for c in changes if c.get("kind") == "cell"]
                         if cell_changes:
@@ -1869,63 +1887,74 @@ elif st.session_state.current_view == "HISTORY":
                                 affected_members_map.setdefault(m_name, {})[(c["meal"], str(c["day"]))] = c
 
                             changed_days = sorted(list({int(c["day"]) for c in cell_changes if str(c["day"]).isdigit()}))
-                            preview_html = "<div style='overflow-x:auto;'><table style='width:100%; border-collapse:collapse; font-size:12px; text-align:center;'>"
-                            preview_html += "<tr style='background:#1e3a8a; color:white; font-weight:bold;'><th style='padding:8px; border:1px solid #334155;'>Member</th><th style='padding:8px; border:1px solid #334155;'>Meal</th>"
+                            table_parts = [
+                                "<div style='overflow-x:auto;'><table style='width:100%;border-collapse:collapse;font-size:12px;text-align:center;'>",
+                                "<tr style='background:#281244;color:#F8FAFC;font-weight:bold;'>",
+                                "<th style='padding:8px;border:1px solid rgba(226,232,240,0.2);'>Member</th>",
+                                "<th style='padding:8px;border:1px solid rgba(226,232,240,0.2);'>Meal</th>"
+                            ]
                             for d_num in changed_days:
-                                preview_html += f"<th style='padding:8px; border:1px solid #334155; background:#2563eb; font-weight:bold;'>Day {d_num}</th>"
-                            preview_html += "</tr>"
+                                table_parts.append(f"<th style='padding:8px;border:1px solid rgba(226,232,240,0.2);background:#F59E0B;color:#12071F;font-weight:800;'>Day {d_num}</th>")
+                            table_parts.append("</tr>")
 
                             for m_name, coords in affected_members_map.items():
+                                safe_m = html.escape(str(m_name))
                                 for m_idx, meal_type in enumerate(MEALS):
-                                    preview_html += "<tr>"
+                                    table_parts.append("<tr>")
                                     if m_idx == 0:
-                                        preview_html += f"<td rowspan='3' style='background:#0f172a; color:white; font-weight:bold; padding:8px; border:1px solid #334155;'>{m_name}</td>"
-                                    preview_html += f"<td style='background:#1e293b; color:#cbd5e1; font-weight:700; padding:6px; border:1px solid #334155;'>{meal_type}</td>"
+                                        table_parts.append(f"<td rowspan='3' style='background:#1B0B2E;color:#F8FAFC;font-weight:bold;padding:8px;border:1px solid rgba(226,232,240,0.2);'>{safe_m}</td>")
+                                    table_parts.append(f"<td style='background:#24103E;color:#E2E8F0;font-weight:700;padding:6px;border:1px solid rgba(226,232,240,0.2);'>{meal_type}</td>")
                                     for d_num in changed_days:
                                         key_coord = (meal_type, str(d_num))
                                         if key_coord in coords:
                                             ch_item = coords[key_coord]
-                                            preview_html += (
-                                                f"<td style='background:#fef08a; color:#0f172a; font-weight:800; padding:6px; border:2px solid #f59e0b;'>"
-                                                f"<span style='color:#dc2626; text-decoration:line-through; font-size:11px; margin-right:4px;'>{ch_item['old']}</span>"
-                                                f"<span style='color:#15803d; font-size:13px;'>{ch_item['new']}</span>"
+                                            old_c = html.escape(str(ch_item["old"]))
+                                            new_c = html.escape(str(ch_item["new"]))
+                                            table_parts.append(
+                                                f"<td style='background:rgba(245,158,11,0.18);color:#F8FAFC;font-weight:800;padding:6px;border:2px solid #F59E0B;'>"
+                                                f"<span style='color:#FCA5A5;text-decoration:line-through;font-size:11px;margin-right:5px;'>{old_c}</span>"
+                                                f"<span style='color:#FBBF24;font-size:13px;'>{new_c}</span>"
                                                 f"</td>"
                                             )
                                         else:
-                                            preview_html += "<td style='background:#0f172a; color:#475569; padding:6px; border:1px solid #334155;'>—</td>"
-                                    preview_html += "</tr>"
-                            preview_html += "</table></div>"
-                            st.markdown(preview_html, unsafe_allow_html=True)
+                                            table_parts.append("<td style='background:#140824;color:#64748B;padding:6px;border:1px solid rgba(226,232,240,0.15);'>—</td>")
+                                    table_parts.append("</tr>")
+                            table_parts.append("</table></div>")
+                            st.markdown("".join(table_parts), unsafe_allow_html=True)
                     else:
                         st.info(f"**{parsed_sel.get('summary', 'Chart updated.')}**")
 
                 elif act_type == "EXPENSE_ADD":
-                    st.markdown(
-                        f"""
-                        <div style="background:rgba(6, 78, 59, 0.65); border:1px solid rgba(16, 185, 129, 0.4); border-left:5px solid #10b981; padding:18px; border-radius:12px; color:#ecfdf5;">
-                            <h4 style="margin:0 0 10px 0; color:#6ee7b7; font-weight:800;">📈 Purchase Recorded</h4>
-                            <p style="margin:6px 0;"><b>Description:</b> {parsed_sel.get('item', '-')}</p>
-                            <p style="margin:6px 0;"><b>Amount:</b> <span style="font-size:18px; font-weight:800; color:#34d399;">₹{parsed_sel.get('amount', 0):,}</span></p>
-                            <p style="margin:6px 0;"><b>Paid By:</b> {parsed_sel.get('buyer', '-')}</p>
-                            <p style="margin:6px 0;"><b>Date:</b> {parsed_sel.get('date', '-')}</p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
+                    item_txt = html.escape(str(parsed_sel.get("item", "-")))
+                    amt_val = int(parsed_sel.get("amount", 0))
+                    buyer_txt = html.escape(str(parsed_sel.get("buyer", "-")))
+                    date_txt = html.escape(str(parsed_sel.get("date", "-")))
+                    add_card = (
+                        f"<div style='background:linear-gradient(135deg,rgba(40,18,68,0.9),rgba(20,8,36,0.95));border:1px solid rgba(245,158,11,0.4);border-left:5px solid #F59E0B;padding:18px;border-radius:12px;color:#F8FAFC;'>"
+                        f"<h4 style='margin:0 0 10px 0;color:#FBBF24;font-weight:800;'>📈 Purchase Recorded</h4>"
+                        f"<p style='margin:6px 0;color:#E2E8F0;'><b>Description:</b> {item_txt}</p>"
+                        f"<p style='margin:6px 0;color:#E2E8F0;'><b>Amount:</b> <span style='font-size:18px;font-weight:800;color:#FBBF24;'>₹{amt_val:,}</span></p>"
+                        f"<p style='margin:6px 0;color:#E2E8F0;'><b>Paid By:</b> {buyer_txt}</p>"
+                        f"<p style='margin:6px 0;color:#E2E8F0;'><b>Date:</b> {date_txt}</p>"
+                        f"</div>"
                     )
+                    st.markdown(add_card, unsafe_allow_html=True)
 
                 elif act_type == "EXPENSE_DELETE":
-                    st.markdown(
-                        f"""
-                        <div style="background:rgba(69, 10, 10, 0.65); border:1px solid rgba(239, 68, 68, 0.4); border-left:5px solid #ef4444; padding:18px; border-radius:12px; color:#fef2f2;">
-                            <h4 style="margin:0 0 10px 0; color:#fca5a5; font-weight:800;">🗑️ Purchase Removed</h4>
-                            <p style="margin:6px 0;"><b>Description:</b> {parsed_sel.get('item', '-')}</p>
-                            <p style="margin:6px 0;"><b>Amount:</b> <span style="font-size:18px; font-weight:800; color:#f87171; text-decoration:line-through;">₹{parsed_sel.get('amount', 0):,}</span></p>
-                            <p style="margin:6px 0;"><b>Paid By:</b> {parsed_sel.get('buyer', '-')}</p>
-                            <p style="margin:6px 0;"><b>Date:</b> {parsed_sel.get('date', '-')}</p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
+                    item_txt = html.escape(str(parsed_sel.get("item", "-")))
+                    amt_val = int(parsed_sel.get("amount", 0))
+                    buyer_txt = html.escape(str(parsed_sel.get("buyer", "-")))
+                    date_txt = html.escape(str(parsed_sel.get("date", "-")))
+                    del_card = (
+                        f"<div style='background:linear-gradient(135deg,rgba(55,15,35,0.9),rgba(25,8,20,0.95));border:1px solid rgba(248,113,113,0.4);border-left:5px solid #EF4444;padding:18px;border-radius:12px;color:#FEF2F2;'>"
+                        f"<h4 style='margin:0 0 10px 0;color:#FCA5A5;font-weight:800;'>🗑️ Purchase Removed</h4>"
+                        f"<p style='margin:6px 0;color:#E2E8F0;'><b>Description:</b> {item_txt}</p>"
+                        f"<p style='margin:6px 0;color:#E2E8F0;'><b>Amount:</b> <span style='font-size:18px;font-weight:800;color:#F87171;text-decoration:line-through;'>₹{amt_val:,}</span></p>"
+                        f"<p style='margin:6px 0;color:#E2E8F0;'><b>Paid By:</b> {buyer_txt}</p>"
+                        f"<p style='margin:6px 0;color:#E2E8F0;'><b>Date:</b> {date_txt}</p>"
+                        f"</div>"
                     )
+                    st.markdown(del_card, unsafe_allow_html=True)
 
                 else:
                     st.info(f"**{parsed_sel.get('summary', '')}**\n\n{parsed_sel.get('info', '')}")
