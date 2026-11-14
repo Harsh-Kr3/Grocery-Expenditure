@@ -20,7 +20,6 @@ except ImportError:
 # ----------------- PAGE CONFIG -----------------
 st.set_page_config(
     page_title="Hostel Mess Portal",
-    page_icon="🍽️",
     layout="wide"
 )
 
@@ -313,12 +312,12 @@ def register_user(user_id: str, full_name: str, password: str):
     user_id = user_id.strip().lower()
     existing = db_query("SELECT user_id FROM users WHERE user_id = ?", (user_id,), fetch="one")
     if existing:
-        return False, "User ID already exists. Please choose another."
+        return False, "**User ID already exists. Please choose another.**"
     db_query(
         "INSERT INTO users (user_id, full_name, password_hash) VALUES (?, ?, ?)",
         (user_id, full_name.strip(), hash_password(password))
     )
-    return True, "Account created successfully!"
+    return True, "**Account created successfully!**"
 
 def authenticate_user(user_id: str, password: str):
     user_id = user_id.strip().lower()
@@ -338,14 +337,14 @@ def verify_user_password(user_id: str, password: str) -> bool:
 
 def change_user_password(user_id: str, current_pwd: str, new_pwd: str):
     if not verify_user_password(user_id, current_pwd):
-        return False, "Current password is incorrect."
+        return False, "**Current password is incorrect.**"
     if len(new_pwd) < 4:
-        return False, "New password must be at least 4 characters."
+        return False, "**New password must be at least 4 characters.**"
     db_query(
         "UPDATE users SET password_hash = ? WHERE user_id = ?",
         (hash_password(new_pwd), user_id)
     )
-    return True, "Password updated successfully!"
+    return True, "**Password updated successfully!**"
 
 def delete_entire_group(group_id: str):
     db_query("DELETE FROM meal_records WHERE group_id = ?", (group_id,))
@@ -381,7 +380,6 @@ def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_na
             for d in DAYS:
                 meal_rows.append((group_id, i, m, d, default_val))
 
-    # Single bulk insert instead of 465+ individual queries
     db_batch_upsert_meals(meal_rows)
 
     log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", {
@@ -395,7 +393,7 @@ def request_join_group(group_id: str, user_id: str, user_name: str):
     group_id = group_id.strip().upper()
     group = db_query("SELECT * FROM mess_groups WHERE group_id = ?", (group_id,), fetch="one")
     if not group:
-        return False, "Group not found. Please check the Group Code."
+        return False, "**Group not found. Please check the Group Code.**"
 
     existing = db_query(
         "SELECT status FROM group_memberships WHERE group_id = ? AND user_id = ?",
@@ -403,7 +401,7 @@ def request_join_group(group_id: str, user_id: str, user_name: str):
         fetch="one"
     )
     if existing:
-        return False, f"You already have a membership status ({existing['status']}) in this group."
+        return False, f"**You already have a membership status ({existing['status']}) in this group.**"
 
     ts = datetime.now().isoformat()
     db_query(
@@ -415,7 +413,7 @@ def request_join_group(group_id: str, user_id: str, user_name: str):
         "info": f"User {user_name} (@{user_id}) is awaiting approval."
     })
     st.cache_data.clear()
-    return True, "Join request sent to the group owner! Waiting for approval."
+    return True, "**Join request sent to the group owner! Waiting for approval.**"
 
 @st.cache_data(ttl=120, show_spinner=False)
 def get_user_groups(user_id: str):
@@ -451,7 +449,7 @@ def approve_member(group_id: str, target_user_id: str, target_full_name: str, ow
     )
     approved_count = cnt_row["cnt"]
     if approved_count >= max_members:
-        return False, f"Group is already full ({max_members}/{max_members} members)."
+        return False, f"**Group is already full ({max_members}/{max_members} members).**"
 
     slots = db_query("SELECT slot_id, name FROM group_slots WHERE group_id = ? ORDER BY slot_id ASC", (group_id,), fetch="all")
     taken_rows = db_query(
@@ -480,7 +478,7 @@ def approve_member(group_id: str, target_user_id: str, target_full_name: str, ow
     })
     st.session_state.pop(f"local_chart_cache_{group_id}", None)
     st.cache_data.clear()
-    return True, f"Approved {target_full_name} (Assigned to Slot #{assigned_slot + 1})"
+    return True, f"**Approved {target_full_name} (Assigned to Slot #{assigned_slot + 1})**"
 
 def reject_member(group_id: str, target_user_id: str, target_full_name: str, owner_name: str, owner_id: str):
     db_query("DELETE FROM group_memberships WHERE group_id = ? AND user_id = ?", (group_id, target_user_id))
@@ -564,7 +562,6 @@ def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_
                     batch_rows.append((group_id, slot_id, meal, d, new_val))
 
     if batch_rows:
-        # Update session memory immediately and send 1 batched query to Supabase
         st.session_state[cache_key] = new_records
         db_batch_upsert_meals(batch_rows)
         affected_members = list(dict.fromkeys(c["member"] for c in structured_changes))
@@ -667,38 +664,38 @@ def calculate_member_meals(records):
 
 # ----------------- PROFILE PANEL HELPER (RIGHT-HAND SIDE) -----------------
 def render_profile_popover(current_user, user_groups, active_gid, active_group_info=None):
-    with st.popover(f"👤 {current_user['full_name']}", use_container_width=True):
-        st.markdown(f"### 👤 {current_user['full_name']}")
-        db_badge = "☁️ Cloud DB Connected" if IS_CLOUD_DB else "💻 Local SQLite Mode"
+    with st.popover(f"**Profile: {current_user['full_name']}**", use_container_width=True):
+        st.markdown(f"### **{current_user['full_name']}**")
+        db_badge = "**Cloud DB Connected**" if IS_CLOUD_DB else "**Local SQLite Mode**"
         st.caption(f"**User ID:** `@{current_user['user_id']}` • {db_badge}")
         st.divider()
 
-        st.markdown("**🏘️ My Joined Groups**")
+        st.markdown("**My Joined Groups**")
         if user_groups:
             for g in user_groups:
                 is_current = (g["group_id"] == active_gid)
-                role_icon = "👑" if g["owner_id"] == current_user["user_id"] else "👤"
+                role_label = "[Owner]" if g["owner_id"] == current_user["user_id"] else "[Member]"
                 if g["status"] == "APPROVED":
                     if is_current:
-                        st.markdown(f"✅ **{g['group_name']}** — *Active*")
+                        st.markdown(f"✅ **{g['group_name']}** — ***Active***")
                     else:
-                        if st.button(f"{role_icon} Switch to {g['group_name']}", key=f"prof_sw_{g['group_id']}", use_container_width=True):
+                        if st.button(f"**Switch to {g['group_name']} {role_label}**", key=f"prof_sw_{g['group_id']}", use_container_width=True):
                             st.session_state.active_group_id = g["group_id"]
                             st.session_state.show_group_lobby = False
                             st.session_state.delete_grp_step = 0
                             st.session_state.current_view = "HOME"
                             st.rerun()
                 else:
-                    st.caption(f"⏳ {g['group_name']} — *Pending Approval*")
+                    st.caption(f"**{g['group_name']}** — *Pending Approval*")
         else:
-            st.caption("No groups joined yet.")
+            st.caption("**No groups joined yet.**")
 
-        if st.button("➕ Create / Join Another Group", use_container_width=True):
+        if st.button("**+ Create / Join Another Group**", use_container_width=True):
             st.session_state.show_group_lobby = True
             st.session_state.delete_grp_step = 0
             st.rerun()
 
-        if st.button("🔄 Sync Latest Cloud Data", use_container_width=True):
+        if st.button("**Sync Latest Cloud Data**", use_container_width=True):
             if active_gid:
                 st.session_state.pop(f"local_chart_cache_{active_gid}", None)
             st.cache_data.clear()
@@ -706,16 +703,16 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
 
         st.divider()
 
-        with st.expander("🔐 Change Password", expanded=False):
+        with st.expander("**Change Password**", expanded=False):
             with st.form("change_pwd_form", clear_on_submit=True):
-                curr_pwd = st.text_input("Current Password", type="password")
-                new_pwd = st.text_input("New Password", type="password")
-                conf_pwd = st.text_input("Confirm New Password", type="password")
-                if st.form_submit_button("Update Password", use_container_width=True, type="primary"):
+                curr_pwd = st.text_input("**Current Password**", type="password")
+                new_pwd = st.text_input("**New Password**", type="password")
+                conf_pwd = st.text_input("**Confirm New Password**", type="password")
+                if st.form_submit_button("**Update Password**", use_container_width=True, type="primary"):
                     if not curr_pwd or not new_pwd:
-                        st.error("Please fill all fields.")
+                        st.error("**Please fill all fields.**")
                     elif new_pwd != conf_pwd:
-                        st.error("New passwords do not match.")
+                        st.error("**New passwords do not match.**")
                     else:
                         ok, msg = change_user_password(current_user["user_id"], curr_pwd, new_pwd)
                         if ok:
@@ -725,45 +722,45 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
 
         if active_group_info and active_group_info["owner_id"] == current_user["user_id"]:
             st.divider()
-            with st.expander("🗑️ Delete Group", expanded=(st.session_state.delete_grp_step > 0)):
+            with st.expander("🗑️ **Delete Group**", expanded=(st.session_state.delete_grp_step > 0)):
                 if st.session_state.delete_grp_step == 0:
                     st.caption(f"Delete **{active_group_info['group_name']}** permanently.")
-                    if st.button("🗑️ Delete This Group", key="init_del_grp", use_container_width=True):
+                    if st.button("🗑️ **Delete This Group**", key="init_del_grp", use_container_width=True):
                         st.session_state.delete_grp_step = 1
                         st.rerun()
 
                 elif st.session_state.delete_grp_step == 1:
                     st.markdown("**Step 1: Enter Account Password**")
-                    del_pwd = st.text_input("Password", type="password", key="del_grp_pwd_input")
+                    del_pwd = st.text_input("**Password**", type="password", key="del_grp_pwd_input")
                     c_p1, c_p2 = st.columns(2)
-                    if c_p1.button("Verify", key="verify_del_pwd", type="primary", use_container_width=True):
+                    if c_p1.button("**Verify**", key="verify_del_pwd", type="primary", use_container_width=True):
                         if verify_user_password(current_user["user_id"], del_pwd):
                             st.session_state.delete_grp_step = 2
                             st.rerun()
                         else:
-                            st.error("Incorrect password.")
-                    if c_p2.button("Cancel", key="cancel_del_1", use_container_width=True):
+                            st.error("**Incorrect password.**")
+                    if c_p2.button("✖️ **Cancel**", key="cancel_del_1", use_container_width=True):
                         st.session_state.delete_grp_step = 0
                         st.rerun()
 
                 elif st.session_state.delete_grp_step == 2:
                     st.warning(
-                        f"⚠️ **2nd Verification:** Are you 100% sure you want to permanently delete **{active_group_info['group_name']}** and all its meal & expense data?"
+                        f"⚠️ **2nd Verification:** Are you **100% sure** you want to permanently delete **{active_group_info['group_name']}** and all its meal & expense data?"
                     )
                     c_y, c_n = st.columns(2)
-                    if c_y.button("⚠️ Yes, Delete", key="final_del_grp", type="primary", use_container_width=True):
+                    if c_y.button("⚠️ **Yes, Delete**", key="final_del_grp", type="primary", use_container_width=True):
                         delete_entire_group(active_gid)
                         st.session_state.active_group_id = None
                         st.session_state.delete_grp_step = 0
                         st.toast(f"Group '{active_group_info['group_name']}' deleted.", icon="🗑️")
                         st.rerun()
-                    if c_n.button("✖️ Cancel", key="cancel_del_2", use_container_width=True):
+                    if c_n.button("✖️ **Cancel**", key="cancel_del_2", use_container_width=True):
                         st.session_state.delete_grp_step = 0
                         st.rerun()
 
         st.divider()
 
-        if st.button("🚪 Logout", use_container_width=True, type="secondary"):
+        if st.button("**Logout**", use_container_width=True, type="secondary"):
             st.session_state.user = None
             st.session_state.active_group_id = None
             st.session_state.show_group_lobby = False
@@ -793,20 +790,20 @@ invite_code_param = st.query_params.get("join", "").strip().upper()
 # PHASE 1: AUTHENTICATION
 # ==============================================================================
 if st.session_state.user is None:
-    st.markdown("<h1 style='text-align: center;'>🍽️ Hostel Mess Portal</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; font-weight: 800;'><b>HOSTEL MESS PORTAL</b></h1>", unsafe_allow_html=True)
     if invite_code_param:
         grp_info = get_group_details(invite_code_param)
         if grp_info:
-            st.info(f"🔗 Invited to join **{grp_info['group_name']}**. Log in or create an account below!")
+            st.info(f"**Invited to join {grp_info['group_name']}. Log in or create an account below!**")
 
     col_s1, col_auth, col_s2 = st.columns([1, 2, 1])
     with col_auth:
-        tab_login, tab_signup = st.tabs(["🔑 Login", "📝 Create Account"])
+        tab_login, tab_signup = st.tabs(["**Login**", "**Create Account**"])
         with tab_login:
             with st.form("login_form"):
-                login_uid = st.text_input("User ID", placeholder="e.g. harsh_01")
-                login_pwd = st.text_input("Password", type="password")
-                if st.form_submit_button("Login", use_container_width=True, type="primary"):
+                login_uid = st.text_input("**User ID**", placeholder="e.g. harsh_01")
+                login_pwd = st.text_input("**Password**", type="password")
+                if st.form_submit_button("**Login**", use_container_width=True, type="primary"):
                     user_obj = authenticate_user(login_uid, login_pwd)
                     if user_obj:
                         st.session_state.user = user_obj
@@ -815,16 +812,16 @@ if st.session_state.user is None:
                             st.toast(msg)
                         st.rerun()
                     else:
-                        st.error("Invalid User ID or Password.")
+                        st.error("**Invalid User ID or Password.**")
 
         with tab_signup:
             with st.form("signup_form"):
-                reg_name = st.text_input("Your Full Name (Shown on Meal Chart)", placeholder="e.g. Harsh Kumar")
-                reg_uid = st.text_input("Choose a User ID", placeholder="e.g. harsh_01")
-                reg_pwd = st.text_input("Create Password", type="password")
-                if st.form_submit_button("Sign Up & Continue", use_container_width=True, type="primary"):
+                reg_name = st.text_input("**Your Full Name (Shown on Meal Chart)**", placeholder="e.g. Harsh Kumar")
+                reg_uid = st.text_input("**Choose a User ID**", placeholder="e.g. harsh_01")
+                reg_pwd = st.text_input("**Create Password**", type="password")
+                if st.form_submit_button("**Sign Up & Continue**", use_container_width=True, type="primary"):
                     if not reg_name.strip() or not reg_uid.strip() or not reg_pwd:
-                        st.error("All fields are required.")
+                        st.error("**All fields are required.**")
                     else:
                         ok, msg = register_user(reg_uid, reg_name, reg_pwd)
                         if ok:
@@ -858,11 +855,11 @@ if st.session_state.active_group_id is None and approved_groups and not st.sessi
 if st.session_state.active_group_id is None or st.session_state.show_group_lobby:
     top_l, top_r = st.columns([7, 2])
     with top_l:
-        st.markdown("## 🏠 Create or Join a Mess Group")
+        st.markdown("## **Create or Join a Mess Group**")
     with top_r:
         render_profile_popover(current_user, user_groups, st.session_state.active_group_id, None)
 
-    if approved_groups and st.button("⬅️ Back to My Active Group"):
+    if approved_groups and st.button("**Back to My Active Group**"):
         st.session_state.show_group_lobby = False
         if st.session_state.active_group_id is None:
             st.session_state.active_group_id = approved_groups[0]["group_id"]
@@ -871,16 +868,16 @@ if st.session_state.active_group_id is None or st.session_state.show_group_lobby
     pending_my_groups = [g for g in user_groups if g["status"] == "PENDING"]
     if pending_my_groups:
         for pg in pending_my_groups:
-            st.warning(f"⏳ Your request to join **{pg['group_name']}** is awaiting approval from the group owner.")
+            st.warning(f"⚠️ **Your request to join {pg['group_name']} is awaiting approval from the group owner.**")
 
     st.divider()
     c_create, c_join = st.columns(2)
     with c_create:
-        st.subheader("➕ Create a New Mess Group")
+        st.subheader("**Create a New Mess Group**")
         with st.form("create_group_form"):
-            g_name = st.text_input("Group / Mess Name", placeholder="e.g. Hostel Block-B Mess")
-            g_max = st.number_input("Number of Members", min_value=2, max_value=25, value=5, step=1, format="%d")
-            if st.form_submit_button("Create Group", use_container_width=True, type="primary"):
+            g_name = st.text_input("**Group / Mess Name**", placeholder="e.g. Hostel Block-B Mess")
+            g_max = st.number_input("**Number of Members**", min_value=2, max_value=25, value=5, step=1, format="%d")
+            if st.form_submit_button("**Create Group**", use_container_width=True, type="primary"):
                 if g_name.strip():
                     new_gid = create_mess_group(g_name, g_max, current_user["user_id"], current_user["full_name"])
                     st.session_state.active_group_id = new_gid
@@ -888,13 +885,13 @@ if st.session_state.active_group_id is None or st.session_state.show_group_lobby
                     st.session_state.current_view = "HOME"
                     st.rerun()
                 else:
-                    st.error("Please enter a valid group name.")
+                    st.error("**Please enter a valid group name.**")
 
     with c_join:
-        st.subheader("🔗 Join an Existing Group")
+        st.subheader("**Join an Existing Group**")
         with st.form("join_group_form"):
-            join_code_input = st.text_input("Enter Group Invite Code", value=invite_code_param, placeholder="e.g. A1B2C3D4")
-            if st.form_submit_button("Send Join Request", use_container_width=True):
+            join_code_input = st.text_input("**Enter Group Invite Code**", value=invite_code_param, placeholder="e.g. A1B2C3D4")
+            if st.form_submit_button("**Send Join Request**", use_container_width=True):
                 if join_code_input.strip():
                     ok, msg = request_join_group(join_code_input, current_user["user_id"], current_user["full_name"])
                     if ok:
@@ -903,7 +900,7 @@ if st.session_state.active_group_id is None or st.session_state.show_group_lobby
                     else:
                         st.error(msg)
                 else:
-                    st.error("Please enter a Group Code.")
+                    st.error("**Please enter a Group Code.**")
     st.stop()
 
 # ==============================================================================
@@ -921,12 +918,12 @@ if is_owner:
     hdr_left, hdr_share, hdr_profile = st.columns([6, 2, 2])
     with hdr_left:
         st.markdown(
-            f"<h2 style='margin:0;'>🏠 {group_info['group_name']} "
-            f"<span style='font-size:15px; color:#94a3b8; font-weight:normal;'>( Owner)</span></h2>",
+            f"<h2 style='margin:0;'><b>{group_info['group_name']}</b> "
+            f"<span style='font-size:15px; color:#94a3b8; font-weight:bold;'>(Owner)</span></h2>",
             unsafe_allow_html=True
         )
     with hdr_share:
-        with st.popover("🔗 Share Group Link", use_container_width=True):
+        with st.popover("**Share Group Link**", use_container_width=True):
             st.markdown("**Share Group Link:**")
             st.code(f"https://grocery-expenditure-m.streamlit.app/?join={active_gid}", language="text")
             st.markdown("**Group Invite Code:**")
@@ -937,8 +934,8 @@ else:
     hdr_left, hdr_profile = st.columns([8, 2])
     with hdr_left:
         st.markdown(
-            f"<h2 style='margin:0;'>🏠 {group_info['group_name']} "
-            f"<span style='font-size:15px; color:#94a3b8; font-weight:normal;'>(👤 Member)</span></h2>",
+            f"<h2 style='margin:0;'><b>{group_info['group_name']}</b> "
+            f"<span style='font-size:15px; color:#94a3b8; font-weight:bold;'>(Member)</span></h2>",
             unsafe_allow_html=True
         )
     with hdr_profile:
@@ -947,11 +944,11 @@ else:
 if is_owner:
     pending_list = get_pending_requests(active_gid)
     if pending_list:
-        with st.expander(f"🔔 Pending Member Join Requests ({len(pending_list)})", expanded=True):
+        with st.expander(f"⚠️ **Pending Member Join Requests ({len(pending_list)})**", expanded=True):
             for req in pending_list:
                 r1, r2, r3 = st.columns([5, 2, 2])
-                r1.write(f"👤 **{req['full_name']}** (`@{req['user_id']}`) wants to join.")
-                if r2.button("✅ Approve", key=f"app_{req['user_id']}", use_container_width=True, type="primary"):
+                r1.write(f"**{req['full_name']}** (`@{req['user_id']}`) **wants to join.**")
+                if r2.button("✅ **Approve**", key=f"app_{req['user_id']}", use_container_width=True, type="primary"):
                     ok, msg = approve_member(
                         active_gid, req["user_id"], req["full_name"],
                         current_user["full_name"], current_user["user_id"]
@@ -961,7 +958,7 @@ if is_owner:
                         st.rerun()
                     else:
                         st.error(msg)
-                if r3.button("❌ Reject", key=f"rej_{req['user_id']}", use_container_width=True):
+                if r3.button("❌ **Reject**", key=f"rej_{req['user_id']}", use_container_width=True):
                     reject_member(
                         active_gid, req["user_id"], req["full_name"],
                         current_user["full_name"], current_user["user_id"]
@@ -972,21 +969,21 @@ st.divider()
 
 # ----------------- 1. GROUP HOME VIEW -----------------
 if st.session_state.current_view == "HOME":
-    st.markdown("<h3 style='text-align: center; margin-top: 10px;'>🍽️ Mess Portal Dashboard</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; margin-top: 10px;'><b>MESS PORTAL DASHBOARD</b></h3>", unsafe_allow_html=True)
     st.write("")
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("📋 MESS MEAL CHART", use_container_width=True, type="primary"):
+        if st.button("📊 **MESS MEAL CHART**", use_container_width=True, type="primary"):
             st.session_state.current_view = "MEAL_CHART"
             st.rerun()
     with col2:
-        if st.button("💰 MESS EXPENDITURE", use_container_width=True):
+        if st.button("📈 **MESS EXPENDITURE**", use_container_width=True):
             st.session_state.current_view = "EXPENDITURE"
             st.session_state.confirm_delete_expense = False
             st.rerun()
     with col3:
-        if st.button("📜 ACTIVITY HISTORY", use_container_width=True):
+        if st.button("**ACTIVITY HISTORY**", use_container_width=True):
             st.session_state.current_view = "HISTORY"
             st.rerun()
 
@@ -995,13 +992,13 @@ elif st.session_state.current_view == "MEAL_CHART":
     group_records = load_meal_records(active_gid)
     top1, top2 = st.columns([1, 8])
     with top1:
-        if st.button("⬅️ Back"):
+        if st.button("**Back**"):
             st.session_state.current_view = "HOME"
             st.rerun()
     with top2:
-        st.subheader(f"📋 Mess Meal Chart (1 - 31) — {group_info['max_members']} Members")
+        st.subheader(f"📊 **Mess Meal Chart (1 - 31) — {group_info['max_members']} Members**")
 
-    st.caption("🔒 Member names are locked to registered account holders and cannot be edited.")
+    st.caption("**NOTE: Member names are locked to registered account holders and cannot be edited.**")
 
     updated_records = mess_chart_editor(
         records=group_records,
@@ -1019,7 +1016,7 @@ elif st.session_state.current_view == "MEAL_CHART":
             current_user["user_id"]
         )
         if num_changes > 0:
-            st.toast(f"Saved {num_changes} change(s) & logged to Activity History!", icon="💾")
+            st.toast(f"Saved {num_changes} change(s) & logged to Activity History!", icon="✅")
             st.rerun()
 
 # ----------------- 3. MESS EXPENDITURE VIEW -----------------
@@ -1027,12 +1024,12 @@ elif st.session_state.current_view == "EXPENDITURE":
     group_records = load_meal_records(active_gid)
     top1, top2 = st.columns([1, 8])
     with top1:
-        if st.button("⬅️ Back"):
+        if st.button("**Back**"):
             st.session_state.current_view = "HOME"
             st.session_state.confirm_delete_expense = False
             st.rerun()
     with top2:
-        st.subheader("💰 Mess Expenditure & Member Settlements")
+        st.subheader("📈 **Mess Expenditure & Member Settlements**")
 
     purchases = load_purchases(active_gid)
     total_meals, member_meals = calculate_member_meals(group_records)
@@ -1042,12 +1039,12 @@ elif st.session_state.current_view == "EXPENDITURE":
     per_meal_rate = (total_spent / total_meals) if total_meals > 0 else 0.0
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("💵 Total Mess Expenditure", f"₹{total_spent:,.0f}")
-    m2.metric("🍲 Total Meals Eaten", f"{total_meals:.1f}")
-    m3.metric("📈 Per-Meal Rate", f"₹{per_meal_rate:.2f}")
+    m1.metric("**Total Mess Expenditure**", f"₹{total_spent:,.0f}")
+    m2.metric("**Total Meals Eaten**", f"{total_meals:.1f}")
+    m3.metric("📈 **Per-Meal Rate**", f"₹{per_meal_rate:.2f}")
 
     st.divider()
-    st.markdown("### 📊 Member Summary & Settlement Overview")
+    st.markdown("### 📊 **Member Summary & Settlement Overview**")
 
     summary_rows = []
     member_purchases_map = {m: [] for m in active_members}
@@ -1078,19 +1075,19 @@ elif st.session_state.current_view == "EXPENDITURE":
         )
         st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
-    with st.expander("➕ Add New Purchase / Expense", expanded=True):
+    with st.expander("**+ Add New Purchase / Expense**", expanded=True):
         with st.form("purchase_form", clear_on_submit=True):
             col_d, col_item, col_buyer, col_amt = st.columns([2, 4, 3, 2])
             with col_d:
-                p_date = st.date_input("Date", value=date.today())
+                p_date = st.date_input("**Date**", value=date.today())
             with col_item:
-                p_item = st.text_input("Item Name")
+                p_item = st.text_input("**Item Name**")
             with col_buyer:
-                p_buyer = st.selectbox("Purchased By", active_members)
+                p_buyer = st.selectbox("**Purchased By**", active_members)
             with col_amt:
-                p_amount = st.number_input("₹ Amount", min_value=1, step=1, value=None, format="%d", placeholder="₹")
+                p_amount = st.number_input("**₹ Amount**", min_value=1, step=1, value=None, format="%d", placeholder="₹")
 
-            if st.form_submit_button("Add Expense", use_container_width=True, type="primary"):
+            if st.form_submit_button("**Add Expense**", use_container_width=True, type="primary"):
                 if p_amount is not None and p_amount > 0 and p_item.strip():
                     add_purchase(
                         active_gid,
@@ -1105,12 +1102,12 @@ elif st.session_state.current_view == "EXPENDITURE":
                     st.toast(f"Added ₹{int(p_amount):,} for {p_item.strip()}", icon="✅")
                     st.rerun()
                 else:
-                    st.error("Please enter an item name and amount.")
+                    st.error("**Please enter an item name and amount.**")
 
     st.divider()
-    st.markdown("### 📑 Individual Member Purchase Logs & Statements")
+    st.markdown("### 📑 **Individual Member Purchase Logs & Statements**")
     if active_members:
-        member_tabs = st.tabs(active_members)
+        member_tabs = st.tabs([f"**{m}**" for m in active_members])
         for i, member in enumerate(active_members):
             with member_tabs[i]:
                 m_meals = member_meals[member]
@@ -1120,10 +1117,10 @@ elif st.session_state.current_view == "EXPENDITURE":
                 m_net = m_bought_total - m_eaten_cost
 
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Meals Eaten", f"{m_meals:.1f}")
-                c2.metric("Total Grocery Bought", f"₹{m_bought_total:,.0f}")
-                c3.metric("Amount Eaten", f"₹{m_eaten_cost:,.2f}")
-                c4.metric(f"Balance ({'Refund' if m_net >= 0 else 'Due to Pay'})", f"₹{abs(m_net):,.2f}")
+                c1.metric("**Meals Eaten**", f"{m_meals:.1f}")
+                c2.metric("**Total Grocery Bought**", f"₹{m_bought_total:,.0f}")
+                c3.metric("**Amount Eaten**", f"₹{m_eaten_cost:,.2f}")
+                c4.metric(f"**Balance ({'Refund' if m_net >= 0 else 'Due to Pay'})**", f"₹{abs(m_net):,.2f}")
 
                 if m_items:
                     df_m = pd.DataFrame(m_items)[["date", "item", "amount"]].copy()
@@ -1131,14 +1128,14 @@ elif st.session_state.current_view == "EXPENDITURE":
                     df_m = df_m.rename(columns={"date": "Date", "item": "Item Name", "amount": "Amount (₹)"})
                     st.dataframe(df_m, use_container_width=True, hide_index=True)
                 else:
-                    st.info(f"No grocery purchases recorded for {member} yet.")
+                    st.info(f"**No grocery purchases recorded for {member} yet.**")
 
     st.write("")
     col_del, col_csv = st.columns([2, 2])
     with col_del:
         if purchases:
             if not st.session_state.confirm_delete_expense:
-                if st.button("🗑️ Delete Most Recent Purchase", use_container_width=True):
+                if st.button("🗑️ **Delete Most Recent Purchase**", use_container_width=True):
                     st.session_state.confirm_delete_expense = True
                     st.rerun()
             else:
@@ -1148,15 +1145,15 @@ elif st.session_state.current_view == "EXPENDITURE":
                     f"- **Item:** {last_exp['item']}\n"
                     f"- **Amount:** ₹{int(float(last_exp['amount'])):,}\n"
                     f"- **Purchased By:** {last_exp['buyer']} (Date: {last_exp['date']})\n\n"
-                    f"*This deletion will be permanently logged in the Activity History.*"
+                    f"***This deletion will be permanently logged in the Activity History.***"
                 )
                 c_yes, c_no = st.columns(2)
-                if c_yes.button("⚠️ Yes, Permanently Delete", type="primary", use_container_width=True):
+                if c_yes.button("⚠️ **Yes, Permanently Delete**", type="primary", use_container_width=True):
                     delete_last_purchase(active_gid, current_user["full_name"], current_user["user_id"])
                     st.session_state.confirm_delete_expense = False
                     st.toast("Last purchase deleted & recorded in History.", icon="🗑️")
                     st.rerun()
-                if c_no.button("✖️ Cancel", use_container_width=True):
+                if c_no.button("✖️ **Cancel**", use_container_width=True):
                     st.session_state.confirm_delete_expense = False
                     st.rerun()
 
@@ -1164,7 +1161,7 @@ elif st.session_state.current_view == "EXPENDITURE":
         if purchases:
             csv_data = pd.DataFrame(purchases).to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Export Full Purchase Log (CSV)",
+                label="📊 **Export Full Purchase Log (CSV)**",
                 data=csv_data,
                 file_name=f"mess_purchases_{active_gid}.csv",
                 mime="text/csv",
@@ -1175,15 +1172,15 @@ elif st.session_state.current_view == "EXPENDITURE":
 elif st.session_state.current_view == "HISTORY":
     top1, top2 = st.columns([1, 8])
     with top1:
-        if st.button("⬅️ Back"):
+        if st.button("**Back**"):
             st.session_state.current_view = "HOME"
             st.rerun()
     with top2:
-        st.subheader(" Activity History & Visual Change Inspector")
+        st.subheader("📊 **Activity History & Visual Change Inspector**")
 
     logs = load_activity_logs(active_gid)
     if not logs:
-        st.info("No activity recorded for this group yet.")
+        st.info("**No activity recorded for this group yet.**")
     else:
         if st.session_state.selected_log_id is None or not any(l["id"] == st.session_state.selected_log_id for l in logs):
             st.session_state.selected_log_id = logs[0]["id"]
@@ -1191,27 +1188,27 @@ elif st.session_state.current_view == "HISTORY":
         left_col, right_col = st.columns([4, 6], gap="large")
 
         with left_col:
-            st.markdown("#### 🕒 Recent Actions (Click to Inspect)")
-            badge_icons = {
-                "MEAL_UPDATE": "🍽️",
-                "EXPENSE_ADD": "➕",
-                "EXPENSE_DELETE": "🗑️",
-                "GROUP_ADMIN": ""
+            st.markdown("#### **Recent Actions (Click to Inspect)**")
+            badge_labels = {
+                "MEAL_UPDATE": "📊 [MEAL UPDATE]",
+                "EXPENSE_ADD": "📈 [EXPENSE ADDED]",
+                "EXPENSE_DELETE": "🗑️ [EXPENSE DELETED]",
+                "GROUP_ADMIN": "[ADMIN]"
             }
 
             for log_item in logs:
                 parsed = parse_log_details(log_item)
-                icon = badge_icons.get(log_item["action_type"], "📌")
+                prefix = badge_labels.get(log_item["action_type"], "[LOG]")
                 short_title = parsed.get("summary", log_item["action_type"])
                 is_selected = (log_item["id"] == st.session_state.selected_log_id)
 
                 with st.container(border=True):
                     c_info, c_btn = st.columns([4, 1.3])
                     with c_info:
-                        st.markdown(f"**{icon} {short_title}**")
-                        st.caption(f"👤 {log_item['actor_name']} • 🕒 {log_item['timestamp']}")
+                        st.markdown(f"**{prefix} {short_title}**")
+                        st.caption(f"**By:** {log_item['actor_name']} • **Time:** {log_item['timestamp']}")
                     with c_btn:
-                        btn_label = "Viewing" if is_selected else "🔍 View"
+                        btn_label = "**Viewing**" if is_selected else "**View**"
                         btn_type = "primary" if is_selected else "secondary"
                         if st.button(btn_label, key=f"sel_log_{log_item['id']}", use_container_width=True, type=btn_type):
                             st.session_state.selected_log_id = log_item["id"]
@@ -1223,7 +1220,7 @@ elif st.session_state.current_view == "HISTORY":
             act_type = selected_log["action_type"]
 
             with st.container(border=True):
-                st.markdown(f"### 🔎 Action Details")
+                st.markdown("### **Action Details**")
                 st.markdown(
                     f"**Performed By:** `{selected_log['actor_name']}` (`@{selected_log['actor_id']}`)  \n"
                     f"**Timestamp:** `{selected_log['timestamp']}`"
@@ -1233,19 +1230,19 @@ elif st.session_state.current_view == "HISTORY":
                 if act_type == "MEAL_UPDATE":
                     changes = parsed_sel.get("changes", [])
                     if changes:
-                        st.markdown("#### 🎨 Highlighted Cell Changes on Meal Chart")
+                        st.markdown("#### 📊 **Highlighted Cell Changes on Meal Chart**")
                         cards_html = "<div style='display:flex; flex-direction:column; gap:10px; margin-bottom:18px;'>"
                         for ch in changes:
                             day_badge = f"Day {ch['day']}" if ch.get("day") != "-" else "Member Name"
                             cards_html += f"""
                             <div style="background:#1e293b; border-left:5px solid #f59e0b; padding:12px 16px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; color:#f8fafc;">
                                 <div>
-                                    <span style="background:#3b82f6; color:white; padding:3px 8px; border-radius:4px; font-size:12px; font-weight:700; margin-right:8px;">{ch.get('member')}</span>
-                                    <span style="font-weight:600; font-size:14px; color:#e2e8f0;">{ch.get('meal')}</span>
-                                    <span style="color:#fbbf24; font-weight:700; margin-left:8px;">({day_badge})</span>
+                                    <span style="background:#3b82f6; color:white; padding:3px 8px; border-radius:4px; font-size:12px; font-weight:800; margin-right:8px;">{ch.get('member')}</span>
+                                    <span style="font-weight:700; font-size:14px; color:#e2e8f0;">{ch.get('meal')}</span>
+                                    <span style="color:#fbbf24; font-weight:800; margin-left:8px;">({day_badge})</span>
                                 </div>
                                 <div style="display:flex; align-items:center; gap:10px;">
-                                    <span style="background:#7f1d1d; color:#fca5a5; padding:4px 10px; border-radius:6px; text-decoration:line-through; font-weight:600;">{ch.get('old')}</span>
+                                    <span style="background:#7f1d1d; color:#fca5a5; padding:4px 10px; border-radius:6px; text-decoration:line-through; font-weight:700;">{ch.get('old')}</span>
                                     <span style="color:#94a3b8; font-weight:bold;">➔</span>
                                     <span style="background:#14532d; color:#86efac; padding:4px 12px; border-radius:6px; font-weight:800; border:1px solid #22c55e;">{ch.get('new')}</span>
                                 </div>
@@ -1256,7 +1253,7 @@ elif st.session_state.current_view == "HISTORY":
 
                         cell_changes = [c for c in changes if c.get("kind") == "cell"]
                         if cell_changes:
-                            st.markdown("#### 🗺️ Meal Chart Highlight Preview (Modified Cells in Orange/Green)")
+                            st.markdown("#### 📊 **Meal Chart Highlight Preview (Modified Cells in Orange/Green)**")
                             affected_members_map = {}
                             for c in cell_changes:
                                 m_name = c["member"]
@@ -1264,9 +1261,9 @@ elif st.session_state.current_view == "HISTORY":
 
                             changed_days = sorted(list({int(c["day"]) for c in cell_changes if str(c["day"]).isdigit()}))
                             preview_html = "<div style='overflow-x:auto;'><table style='width:100%; border-collapse:collapse; font-size:12px; text-align:center;'>"
-                            preview_html += "<tr style='background:#0b57d0; color:white;'><th style='padding:6px; border:1px solid #334155;'>Member</th><th style='padding:6px; border:1px solid #334155;'>Meal</th>"
+                            preview_html += "<tr style='background:#0b57d0; color:white; font-weight:bold;'><th style='padding:6px; border:1px solid #334155;'>Member</th><th style='padding:6px; border:1px solid #334155;'>Meal</th>"
                             for d_num in changed_days:
-                                preview_html += f"<th style='padding:6px; border:1px solid #334155; background:#d97706;'>Day {d_num}</th>"
+                                preview_html += f"<th style='padding:6px; border:1px solid #334155; background:#d97706; font-weight:bold;'>Day {d_num}</th>"
                             preview_html += "</tr>"
 
                             for m_name, coords in affected_members_map.items():
@@ -1274,7 +1271,7 @@ elif st.session_state.current_view == "HISTORY":
                                     preview_html += "<tr>"
                                     if m_idx == 0:
                                         preview_html += f"<td rowspan='3' style='background:#1e3a8a; color:white; font-weight:bold; padding:6px; border:1px solid #334155;'>{m_name}</td>"
-                                    preview_html += f"<td style='background:#1d4ed8; color:white; font-weight:600; padding:5px; border:1px solid #334155;'>{meal_type}</td>"
+                                    preview_html += f"<td style='background:#1d4ed8; color:white; font-weight:700; padding:5px; border:1px solid #334155;'>{meal_type}</td>"
                                     for d_num in changed_days:
                                         key_coord = (meal_type, str(d_num))
                                         if key_coord in coords:
@@ -1291,13 +1288,13 @@ elif st.session_state.current_view == "HISTORY":
                             preview_html += "</table></div>"
                             st.markdown(preview_html, unsafe_allow_html=True)
                     else:
-                        st.info(parsed_sel.get("summary", "Meal chart updated."))
+                        st.info(f"**{parsed_sel.get('summary', 'Meal chart updated.')}**")
 
                 elif act_type == "EXPENSE_ADD":
                     st.markdown(
                         f"""
                         <div style="background:#064e3b; border-left:6px solid #10b981; padding:16px; border-radius:8px; color:#ecfdf5;">
-                            <h4 style="margin:0 0 8px 0; color:#6ee7b7;">➕ New Grocery Expense Added</h4>
+                            <h4 style="margin:0 0 8px 0; color:#6ee7b7; font-weight:800;">📈 New Grocery Expense Added</h4>
                             <p style="margin:4px 0;"><b>Item Purchased:</b> {parsed_sel.get('item', '-')}</p>
                             <p style="margin:4px 0;"><b>Amount:</b> <span style="font-size:18px; font-weight:800; color:#34d399;">₹{parsed_sel.get('amount', 0):,}</span></p>
                             <p style="margin:4px 0;"><b>Paid By:</b> {parsed_sel.get('buyer', '-')}</p>
@@ -1311,7 +1308,7 @@ elif st.session_state.current_view == "HISTORY":
                     st.markdown(
                         f"""
                         <div style="background:#450a0a; border-left:6px solid #ef4444; padding:16px; border-radius:8px; color:#fef2f2;">
-                            <h4 style="margin:0 0 8px 0; color:#fca5a5;">🗑️ Expense Entry Deleted</h4>
+                            <h4 style="margin:0 0 8px 0; color:#fca5a5; font-weight:800;">🗑️ Expense Entry Deleted</h4>
                             <p style="margin:4px 0;"><b>Deleted Item:</b> {parsed_sel.get('item', '-')}</p>
                             <p style="margin:4px 0;"><b>Deleted Amount:</b> <span style="font-size:18px; font-weight:800; color:#f87171; text-decoration:line-through;">₹{parsed_sel.get('amount', 0):,}</span></p>
                             <p style="margin:4px 0;"><b>Originally Paid By:</b> {parsed_sel.get('buyer', '-')}</p>
