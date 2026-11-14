@@ -922,7 +922,7 @@ if is_owner:
     with hdr_left:
         st.markdown(
             f"<h2 style='margin:0;'>🏠 {group_info['group_name']} "
-            f"<span style='font-size:15px; color:#94a3b8; font-weight:normal;'>(👑 Owner)</span></h2>",
+            f"<span style='font-size:15px; color:#94a3b8; font-weight:normal;'>( Owner)</span></h2>",
             unsafe_allow_html=True
         )
     with hdr_share:
@@ -1179,7 +1179,7 @@ elif st.session_state.current_view == "HISTORY":
             st.session_state.current_view = "HOME"
             st.rerun()
     with top2:
-        st.subheader("📜 Activity History & Visual Change Inspector")
+        st.subheader(" Activity History & Visual Change Inspector")
 
     logs = load_activity_logs(active_gid)
     if not logs:
@@ -1196,7 +1196,7 @@ elif st.session_state.current_view == "HISTORY":
                 "MEAL_UPDATE": "🍽️",
                 "EXPENSE_ADD": "➕",
                 "EXPENSE_DELETE": "🗑️",
-                "GROUP_ADMIN": "👑"
+                "GROUP_ADMIN": ""
             }
 
             for log_item in logs:
