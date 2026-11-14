@@ -22,8 +22,187 @@ except ImportError:
 # ----------------- PAGE CONFIG -----------------
 st.set_page_config(
     page_title="Hostel Mess Portal",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
+
+# ----------------- AESTHETIC ANIMATED UI & PROFESSIONAL CSS -----------------
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {background: transparent !important;}
+
+.block-container {
+    padding-top: 2rem !important;
+    padding-bottom: 3rem !important;
+    max-width: 1380px !important;
+}
+
+@keyframes fadeSlideUp {
+    0% { opacity: 0; transform: translateY(14px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 15px rgba(59, 130, 246, 0.18); }
+    50% { box-shadow: 0 0 25px rgba(99, 102, 241, 0.35); }
+}
+
+div[data-testid="stVerticalBlock"] > div {
+    animation: fadeSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Hero Banner & Group Header */
+.portal-hero {
+    text-align: center;
+    padding: 2.2rem 1rem 1.6rem 1rem;
+    margin-bottom: 1.5rem;
+    background: radial-gradient(circle at top, rgba(30, 58, 138, 0.35), rgba(15, 23, 42, 0.4));
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 18px;
+    animation: pulseGlow 5s infinite ease-in-out;
+}
+
+.portal-hero h1 {
+    font-size: 2.4rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.03em !important;
+    margin: 0 !important;
+    background: linear-gradient(135deg, #ffffff 0%, #93c5fd 55%, #818cf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.group-header-card {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.78) 0%, rgba(15, 23, 42, 0.92) 100%);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    border-radius: 16px;
+    padding: 1.15rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.4);
+}
+
+.group-title-text {
+    font-size: 1.65rem;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: -0.02em;
+    margin: 0;
+}
+
+.role-pill {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.16);
+    color: #93c5fd;
+    border: 1px solid rgba(59, 130, 246, 0.32);
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+.cycle-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(90deg, #1d4ed8 0%, #4338ca 100%);
+    color: #ffffff;
+    padding: 5px 14px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+/* Buttons */
+.stButton > button, .stDownloadButton > button {
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    padding: 0.65rem 1.2rem !important;
+    border: 1px solid rgba(148, 163, 184, 0.18) !important;
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.stButton > button:hover, .stDownloadButton > button:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 20px -4px rgba(37, 99, 235, 0.35) !important;
+    border-color: rgba(96, 165, 250, 0.5) !important;
+}
+
+.stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%) !important;
+    color: #ffffff !important;
+    border: none !important;
+}
+
+/* Metric Cards */
+div[data-testid="stMetric"] {
+    background: linear-gradient(145deg, rgba(30, 41, 59, 0.68), rgba(15, 23, 42, 0.88));
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 16px;
+    padding: 1.2rem 1.4rem !important;
+    box-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.35);
+    transition: transform 0.22s ease, border-color 0.22s ease;
+}
+
+div[data-testid="stMetric"]:hover {
+    transform: translateY(-3px);
+    border-color: rgba(59, 130, 246, 0.45);
+}
+
+/* Containers, Expanders & Tabs */
+div[data-testid="stExpander"] {
+    border-radius: 14px !important;
+    border: 1px solid rgba(148, 163, 184, 0.15) !important;
+    background: rgba(15, 23, 42, 0.45) !important;
+    overflow: hidden;
+}
+
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.55);
+    padding: 6px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.stTabs [data-baseweb="tab"] {
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-weight: 700;
+}
+
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%) !important;
+    color: white !important;
+}
+
+/* Inputs */
+div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
+    border-radius: 10px !important;
+}
+
+hr {
+    margin: 1.4rem 0 !important;
+    border-color: rgba(148, 163, 184, 0.12) !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ----------------- CONSTANTS -----------------
 DB_FILE = "mess_portal_v2.db"
@@ -49,10 +228,6 @@ def now_str() -> str:
     return datetime.now().strftime("%d %b %Y, %I:%M %p")
 
 def get_dynamic_month_label(start_month: str, start_year: int, purchases_list=None, is_active=True) -> str:
-    """
-    Automatically denotes the month (e.g., 'November 2026').
-    If dates spill over into the next month (e.g., December), automatically denotes 'November - December 2026'.
-    """
     end_month = None
     end_year = start_year
 
@@ -83,18 +258,15 @@ def get_dynamic_month_label(start_month: str, start_year: int, purchases_list=No
         return f"{start_month} - {end_month} {start_year}"
     return f"{start_month} {start_year}"
 
-# ----------------- ULTRA-COMPACT (<10 KB) NATIVE PDF GENERATOR -----------------
+# ----------------- NATIVE PDF ARCHIVE GENERATOR -----------------
 def _pdf_escape(text: str) -> str:
     clean = str(text).encode("ascii", "replace").decode("ascii")
     return clean.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 def _build_compressed_pdf_from_pages(pages_lines: list) -> bytes:
-    """Builds a valid PDF-1.4 binary using native Type1 Courier font & zlib FlateDecode (< 4 KB)."""
     objects = []
-
-    # 1: Catalog, 2: Pages, 3: Font (Courier Bold/Regular Monospace for clean tables)
     objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
-    objects.append(b"")  # Placeholder for Pages object
+    objects.append(b"")
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>")
 
     page_obj_ids = []
@@ -107,12 +279,12 @@ def _build_compressed_pdf_from_pages(pages_lines: list) -> bytes:
         comp_stream = zlib.compress(raw_stream, 9)
 
         content_id = len(objects) + 1
-        stream_Global = (
+        stream_obj = (
             f"<< /Length {len(comp_stream)} /Filter /FlateDecode >>\nstream\n".encode("latin-1")
             + comp_stream
             + b"\nendstream"
         )
-        objects.append(stream_Global)
+        objects.append(stream_obj)
 
         page_id = len(objects) + 1
         page_obj = (
@@ -145,16 +317,13 @@ def _build_compressed_pdf_from_pages(pages_lines: list) -> bytes:
     return bytes(out)
 
 def generate_compact_mess_pdf(group_name: str, group_id: str, month_label: str, records: list, purchases: list, total_meals: float, member_meals: dict) -> bytes:
-    """
-    Compiles the entire Monthly Mess Chart + Expenditure Summary + Purchase Logs into a <10 KB PDF.
-    """
     total_spent = sum(float(p.get("amount", 0.0)) for p in purchases)
     per_meal_rate = (total_spent / total_meals) if total_meals > 0 else 0.0
 
     all_lines = []
     all_lines.append("=" * 92)
-    all_lines.append(f"HOSTEL MESS PORTAL - OFFICIAL MONTHLY ARCHIVE REPORT")
-    all_lines.append(f"Group: {group_name} ({group_id}) | Month Period: {month_label}")
+    all_lines.append("HOSTEL MESS PORTAL - OFFICIAL MONTHLY STATEMENT")
+    all_lines.append(f"Group: {group_name} ({group_id}) | Period: {month_label}")
     all_lines.append(f"Generated On: {now_str()}")
     all_lines.append("=" * 92)
     all_lines.append(
@@ -212,23 +381,20 @@ def generate_compact_mess_pdf(group_name: str, group_id: str, month_label: str, 
             am = float(p.get("amount", 0.0))
             all_lines.append(f"{dt:<12} {by:<20} {it:<42} {am:>14.0f}")
     else:
-        all_lines.append("No purchases recorded in this month cycle.")
+        all_lines.append("No purchases recorded in this cycle.")
     all_lines.append("=" * 92)
 
-    # Paginate at 72 lines per page
     pages = [all_lines[i:i + 72] for i in range(0, len(all_lines), 72)]
     pdf_bytes = _build_compressed_pdf_from_pages(pages)
 
-    # Guarantee < 10 KB (10,240 bytes) even if there are hundreds of purchase rows
     if len(pdf_bytes) > 10000 and len(pages) > 1:
-        trimmed_lines = all_lines[:125] + ["... [Truncated to strictly enforce <10KB PDF archive limit] ..."]
+        trimmed_lines = all_lines[:125]
         pages = [trimmed_lines[i:i + 72] for i in range(0, len(trimmed_lines), 72)]
         pdf_bytes = _build_compressed_pdf_from_pages(pages)
 
     return pdf_bytes
 
 def trigger_local_pdf_download(pdf_bytes: bytes, filename: str):
-    """Automatically triggers a local browser download of the PDF file onto the user's device."""
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     dl_html = f"""
     <html>
@@ -245,7 +411,6 @@ def trigger_local_pdf_download(pdf_bytes: bytes, filename: str):
 # ----------------- HIGH-SPEED PERSISTENT CONNECTION POOL -----------------
 @st.cache_resource
 def get_pg_pool():
-    """Keeps warm TCP/SSL connections alive across all Streamlit reruns."""
     if IS_CLOUD_DB:
         return pool.ThreadedConnectionPool(
             minconn=1,
@@ -265,7 +430,6 @@ def get_sqlite_conn():
     return conn
 
 def db_query(query: str, params=(), fetch="none"):
-    """Executes SQL using a warm connection pool with auto-reconnect fallback."""
     if IS_CLOUD_DB:
         pg_Query = query.replace("?", "%s")
         pg_pool = get_pg_pool()
@@ -316,7 +480,6 @@ def db_query(query: str, params=(), fetch="none"):
             return None
 
 def db_batch_upsert_meals(rows):
-    """Inserts/Updates hundreds of meal cells in a single network trip."""
     if not rows:
         return
     if IS_CLOUD_DB:
@@ -357,7 +520,6 @@ def db_batch_upsert_meals(rows):
 # ----------------- ONE-TIME SCHEMA INITIALIZATION -----------------
 @st.cache_resource
 def init_db_once():
-    """Runs ONLY ONCE when the server starts instead of every button click."""
     serial_type = "SERIAL PRIMARY KEY" if IS_CLOUD_DB else "INTEGER PRIMARY KEY AUTOINCREMENT"
     schema_sql = f"""
         CREATE TABLE IF NOT EXISTS users (
@@ -451,7 +613,6 @@ init_db_once()
 
 # ----------------- MONTHLY CYCLE & PDF ARCHIVE ENGINE -----------------
 def scope_gid(group_id: str, cycle_key: str) -> str:
-    """Returns the database key for a specific month cycle ('GROUPID' for initial, 'GROUPID__M2' for next)."""
     return group_id if (not cycle_key or cycle_key == "INITIAL") else f"{group_id}__{cycle_key}"
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -478,14 +639,9 @@ def get_group_Open_months(group_id: str):
     return rows
 
 def create_new_month_cycle(group_id: str, start_month: str, start_year: int, owner_name: str, owner_id: str):
-    """
-    Creates the new month cycle FIRST before allowing the previous month to be deleted.
-    If any older previous month still exists, it is purged so only 1 previous month + 1 active month exist.
-    """
     months = get_group_Open_months(group_id)
     prev_months = [m for m in months if m["status"] == "PREVIOUS"]
 
-    # Enforce rule: database only holds current active month + at most 1 previous month before deletion
     for old_pm in prev_months:
         old_sgid = scope_gid(group_id, old_pm["cycle_key"])
         db_query("DELETE FROM meal_records WHERE group_id = ?", (old_sgid,))
@@ -494,7 +650,6 @@ def create_new_month_cycle(group_id: str, start_month: str, start_year: int, own
         db_query("DELETE FROM group_months WHERE id = ?", (old_pm["id"],))
         st.session_state.pop(f"local_chart_cache_{old_sgid}", None)
 
-    # Mark current ACTIVE month as PREVIOUS
     db_query("UPDATE group_months SET status = 'PREVIOUS' WHERE group_id = ? AND status = 'ACTIVE'", (group_id,))
 
     new_cycle_key = f"M{uuid.uuid4().hex[:6].upper()}"
@@ -504,7 +659,6 @@ def create_new_month_cycle(group_id: str, start_month: str, start_year: int, own
         (group_id, new_cycle_key, start_month, int(start_year), new_label, now_str())
     )
 
-    # Initialize fresh 1-31 meal sheet for the new month cycle
     grp = get_group_details(group_id)
     max_members = grp["max_members"] if grp else 5
     new_sgid = scope_gid(group_id, new_cycle_key)
@@ -518,19 +672,13 @@ def create_new_month_cycle(group_id: str, start_month: str, start_year: int, own
     db_batch_upsert_meals(meal_rows)
 
     log_activity(new_sgid, owner_name, owner_id, "GROUP_ADMIN", {
-        "summary": f"Created New Month Cycle: {new_label}",
-        "info": f"Previous month moved to pending archive/deletion state."
+        "summary": f"Started New Cycle: {new_label}",
+        "info": f"Initialized by {owner_name}."
     })
     st.cache_data.clear()
     return new_cycle_key, new_label
 
 def archive_and_delete_previous_month(group_id: str, group_name: str, prev_month_row: dict, active_month_row: dict, owner_name: str, owner_id: str):
-    """
-    1. Generates a <10KB PDF of the previous month's Meal Chart & Mess Expenditure.
-    2. Stores the <10KB PDF in the database (monthly_pdf_archives).
-    3. Deletes all previous month raw data from meal_records, purchases, and activity_logs
-       so the database ONLY stores the current active month's live data + compact PDF archives.
-    """
     prev_sgid = scope_gid(group_id, prev_month_row["cycle_key"])
     active_sgid = scope_gid(group_id, active_month_row["cycle_key"])
 
@@ -557,9 +705,8 @@ def archive_and_delete_previous_month(group_id: str, group_name: str, prev_month
     size_bytes = len(pdf_bytes)
     pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     safe_label = final_month_label.replace(" ", "_").replace("-", "_")
-    file_name = f"Mess_Archive_{group_id}_{safe_label}.pdf"
+    file_name = f"Mess_Statement_{group_id}_{safe_label}.pdf"
 
-    # Store compact PDF in database
     db_query(
         """
         INSERT INTO monthly_pdf_archives (group_id, month_label, file_name, size_bytes, pdf_b64, archived_at, archived_by)
@@ -568,7 +715,6 @@ def archive_and_delete_previous_month(group_id: str, group_name: str, prev_month
         (group_id, final_month_label, file_name, size_bytes, pdf_b64, now_str(), owner_name)
     )
 
-    # Erase ALL raw data from previous month & any older orphaned cycles (keeping ONLY active_sgid)
     db_query(
         "DELETE FROM meal_records WHERE (group_id = ? OR group_id LIKE ?) AND group_id != ?",
         (group_id, f"{group_id}__%", active_sgid)
@@ -589,8 +735,8 @@ def archive_and_delete_previous_month(group_id: str, group_name: str, prev_month
     st.session_state.pop(f"local_chart_cache_{prev_sgid}", None)
 
     log_activity(active_sgid, owner_name, owner_id, "GROUP_ADMIN", {
-        "summary": f"Archived & Deleted Previous Month ({final_month_label})",
-        "info": f"Saved PDF ({size_bytes / 1024:.2f} KB) to database & local device; purged old raw records."
+        "summary": f"Archived & Closed Previous Cycle ({final_month_label})",
+        "info": f"PDF statement archived and previous cycle records cleared."
     })
     st.cache_data.clear()
     return pdf_bytes, file_name, size_bytes, final_month_label
@@ -715,7 +861,7 @@ def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_na
     db_batch_upsert_meals(meal_rows)
 
     log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", {
-        "summary": f"Created group '{group_name.strip()}' ({max_members} slots) — Month: {start_m} {start_y}",
+        "summary": f"Created group '{group_name.strip()}' ({max_members} members)",
         "info": f"Group Owner: {owner_name} (@{owner_id})"
     })
     st.cache_data.clear()
@@ -725,7 +871,7 @@ def request_join_group(group_id: str, user_id: str, user_name: str):
     group_id = group_id.strip().upper()
     group = db_query("SELECT * FROM mess_groups WHERE group_id = ?", (group_id,), fetch="one")
     if not group:
-        return False, "**Group not found. Please check the Group Code.**"
+        return False, "**Group not found. Please check the Invite Code.**"
 
     existing = db_query(
         "SELECT status FROM group_memberships WHERE group_id = ? AND user_id = ?",
@@ -733,7 +879,7 @@ def request_join_group(group_id: str, user_id: str, user_name: str):
         fetch="one"
     )
     if existing:
-        return False, f"**You already have a membership status ({existing['status']}) in this group.**"
+        return False, f"**Membership status is already {existing['status']} in this group.**"
 
     ts = datetime.now().isoformat()
     db_query(
@@ -745,7 +891,7 @@ def request_join_group(group_id: str, user_id: str, user_name: str):
         "info": f"User {user_name} (@{user_id}) is awaiting approval."
     })
     st.cache_data.clear()
-    return True, "**Join request sent to the group owner! Waiting for approval.**"
+    return True, "**Join request sent to the group owner.**"
 
 @st.cache_data(ttl=120, show_spinner=False)
 def get_user_groups(user_id: str):
@@ -805,19 +951,19 @@ def approve_member(group_id: str, target_user_id: str, target_full_name: str, ow
     )
 
     log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", {
-        "summary": f"Approved {target_full_name} into Slot #{assigned_slot + 1}",
+        "summary": f"Approved {target_full_name} (Slot #{assigned_slot + 1})",
         "info": f"Member @{target_user_id} approved by {owner_name}."
     })
     for k in list(st.session_state.keys()):
         if k.startswith(f"local_chart_cache_{group_id}"):
             st.session_state.pop(k, None)
     st.cache_data.clear()
-    return True, f"**Approved {target_full_name} (Assigned to Slot #{assigned_slot + 1})**"
+    return True, f"**Approved {target_full_name}**"
 
 def reject_member(group_id: str, target_user_id: str, target_full_name: str, owner_name: str, owner_id: str):
     db_query("DELETE FROM group_memberships WHERE group_id = ? AND user_id = ?", (group_id, target_user_id))
     log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", {
-        "summary": f"Rejected join request from {target_full_name}",
+        "summary": f"Declined join request from {target_full_name}",
         "info": f"Request from @{target_user_id} was declined."
     })
     st.cache_data.clear()
@@ -900,7 +1046,7 @@ def save_meal_records_with_audit(scoped_group_id: str, old_records, new_records,
         st.session_state[cache_key] = new_records
         db_batch_upsert_meals(batch_rows)
         affected_members = list(dict.fromkeys(c["member"] for c in structured_changes))
-        short_summary = f"Updated {len(structured_changes)} chart cell(s) ({', '.join(affected_members[:2])})"
+        short_summary = f"Updated {len(structured_changes)} cell(s) ({', '.join(affected_members[:2])})"
         log_activity(scoped_group_id, actor_name, actor_id, "MEAL_UPDATE", {
             "summary": short_summary,
             "changes": structured_changes
@@ -997,24 +1143,23 @@ def calculate_member_meals(records):
         total_meals += m_max
     return total_meals, member_meals
 
-# ----------------- PROFILE PANEL HELPER (RIGHT-HAND SIDE) -----------------
+# ----------------- PROFILE PANEL HELPER -----------------
 def render_profile_popover(current_user, user_groups, active_gid, active_group_info=None):
-    with st.popover(f"**Profile: {current_user['full_name']}**", use_container_width=True):
+    with st.popover(f"**{current_user['full_name']}**", use_container_width=True):
         st.markdown(f"### **{current_user['full_name']}**")
-        db_badge = "**Cloud DB Connected**" if IS_CLOUD_DB else "**Local SQLite Mode**"
-        st.caption(f"**User ID:** `@{current_user['user_id']}` • {db_badge}")
+        st.caption(f"**User ID:** `@{current_user['user_id']}`")
         st.divider()
 
-        st.markdown("**My Joined Groups**")
+        st.markdown("**Joined Groups**")
         if user_groups:
             for g in user_groups:
                 is_current = (g["group_id"] == active_gid)
-                role_label = "[Owner]" if g["owner_id"] == current_user["user_id"] else "[Member]"
+                role_label = "Owner" if g["owner_id"] == current_user["user_id"] else "Member"
                 if g["status"] == "APPROVED":
                     if is_current:
-                        st.markdown(f"✅ **{g['group_name']}** — ***Active***")
+                        st.markdown(f"✅ **{g['group_name']}** *(Active)*")
                     else:
-                        if st.button(f"**Switch to {g['group_name']} {role_label}**", key=f"prof_sw_{g['group_id']}", use_container_width=True):
+                        if st.button(f"**{g['group_name']} ({role_label})**", key=f"prof_sw_{g['group_id']}", use_container_width=True):
                             st.session_state.active_group_id = g["group_id"]
                             st.session_state.selected_cycle_key = None
                             st.session_state.show_group_lobby = False
@@ -1022,16 +1167,14 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
                             st.session_state.current_view = "HOME"
                             st.rerun()
                 else:
-                    st.caption(f"**{g['group_name']}** — *Pending Approval*")
-        else:
-            st.caption("**No groups joined yet.**")
+                    st.caption(f"**{g['group_name']}** *(Pending Approval)*")
 
-        if st.button("**+ Create / Join Another Group**", use_container_width=True):
+        if st.button("**Create or Join Group**", use_container_width=True):
             st.session_state.show_group_lobby = True
             st.session_state.delete_grp_step = 0
             st.rerun()
 
-        if st.button("**Sync Latest Cloud Data**", use_container_width=True):
+        if st.button("**Refresh Data**", use_container_width=True):
             if active_gid:
                 for k in list(st.session_state.keys()):
                     if k.startswith(f"local_chart_cache_{active_gid}"):
@@ -1062,13 +1205,12 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
             st.divider()
             with st.expander("🗑️ **Delete Group**", expanded=(st.session_state.delete_grp_step > 0)):
                 if st.session_state.delete_grp_step == 0:
-                    st.caption(f"Delete **{active_group_info['group_name']}** permanently.")
                     if st.button("🗑️ **Delete This Group**", key="init_del_grp", use_container_width=True):
                         st.session_state.delete_grp_step = 1
                         st.rerun()
 
                 elif st.session_state.delete_grp_step == 1:
-                    st.markdown("**Step 1: Enter Account Password**")
+                    st.markdown("**Step 1: Verify Password**")
                     del_pwd = st.text_input("**Password**", type="password", key="del_grp_pwd_input")
                     c_p1, c_p2 = st.columns(2)
                     if c_p1.button("**Verify**", key="verify_del_pwd", type="primary", use_container_width=True):
@@ -1083,7 +1225,7 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
 
                 elif st.session_state.delete_grp_step == 2:
                     st.warning(
-                        f"⚠️ **2nd Verification:** Are you **100% sure** you want to permanently delete **{active_group_info['group_name']}** and all its meal & expense data?"
+                        f"⚠️ **Confirm permanent deletion of {active_group_info['group_name']}?**"
                     )
                     c_y, c_n = st.columns(2)
                     if c_y.button("⚠️ **Yes, Delete**", key="final_del_grp", type="primary", use_container_width=True):
@@ -1098,7 +1240,7 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
 
         st.divider()
 
-        if st.button("**Logout**", use_container_width=True, type="secondary"):
+        if st.button("**Sign Out**", use_container_width=True, type="secondary"):
             st.session_state.user = None
             st.session_state.active_group_id = None
             st.session_state.selected_cycle_key = None
@@ -1129,7 +1271,6 @@ if "pending_auto_pdf" not in st.session_state:
 
 invite_code_param = st.query_params.get("join", "").strip().upper()
 
-# Trigger automatic local PDF download if an archive just completed
 if st.session_state.pending_auto_pdf:
     pdf_info = st.session_state.pending_auto_pdf
     trigger_local_pdf_download(pdf_info["bytes"], pdf_info["filename"])
@@ -1139,20 +1280,25 @@ if st.session_state.pending_auto_pdf:
 # PHASE 1: AUTHENTICATION
 # ==============================================================================
 if st.session_state.user is None:
-    st.markdown("<h1 style='text-align: center; font-weight: 800;'><b>HOSTEL MESS PORTAL</b></h1>", unsafe_allow_html=True)
+    st.markdown("""
+    <div class="portal-hero">
+        <h1>HOSTEL MESS PORTAL</h1>
+    </div>
+    """, unsafe_allow_html=True)
+
     if invite_code_param:
         grp_info = get_group_details(invite_code_param)
         if grp_info:
-            st.info(f"**Invited to join {grp_info['group_name']}. Log in or create an account below!**")
+            st.info(f"**Invited to join {grp_info['group_name']}. Sign in or create an account to continue.**")
 
-    col_s1, col_auth, col_s2 = st.columns([1, 2, 1])
+    col_s1, col_auth, col_s2 = st.columns([1.2, 2, 1.2])
     with col_auth:
-        tab_login, tab_signup = st.tabs(["**Login**", "**Create Account**"])
+        tab_login, tab_signup = st.tabs(["**Sign In**", "**Create Account**"])
         with tab_login:
             with st.form("login_form"):
-                login_uid = st.text_input("**User ID**", placeholder="e.g. harsh_01")
-                login_pwd = st.text_input("**Password**", type="password")
-                if st.form_submit_button("**Login**", use_container_width=True, type="primary"):
+                login_uid = st.text_input("**User ID**", placeholder="Enter your user ID")
+                login_pwd = st.text_input("**Password**", type="password", placeholder="Enter your password")
+                if st.form_submit_button("**Sign In**", use_container_width=True, type="primary"):
                     user_obj = authenticate_user(login_uid, login_pwd)
                     if user_obj:
                         st.session_state.user = user_obj
@@ -1165,10 +1311,10 @@ if st.session_state.user is None:
 
         with tab_signup:
             with st.form("signup_form"):
-                reg_name = st.text_input("**Your Full Name (Shown on Meal Chart)**", placeholder="e.g. Harsh Kumar")
-                reg_uid = st.text_input("**Choose a User ID**", placeholder="e.g. harsh_01")
-                reg_pwd = st.text_input("**Create Password**", type="password")
-                if st.form_submit_button("**Sign Up & Continue**", use_container_width=True, type="primary"):
+                reg_name = st.text_input("**Full Name**", placeholder="Enter your full name")
+                reg_uid = st.text_input("**User ID**", placeholder="Choose a unique user ID")
+                reg_pwd = st.text_input("**Password**", type="password", placeholder="Create a password")
+                if st.form_submit_button("**Create Account**", use_container_width=True, type="primary"):
                     if not reg_name.strip() or not reg_uid.strip() or not reg_pwd:
                         st.error("**All fields are required.**")
                     else:
@@ -1202,13 +1348,13 @@ if st.session_state.active_group_id is None and approved_groups and not st.sessi
 # PHASE 2: GROUP CREATION / JOIN PAGE
 # ==============================================================================
 if st.session_state.active_group_id is None or st.session_state.show_group_lobby:
-    top_l, top_r = st.columns([7, 2])
+    top_l, top_r = st.columns([7.5, 2.5])
     with top_l:
-        st.markdown("## **Create or Join a Mess Group**")
+        st.markdown("## **Workspace Setup**")
     with top_r:
         render_profile_popover(current_user, user_groups, st.session_state.active_group_id, None)
 
-    if approved_groups and st.button("**Back to My Active Group**"):
+    if approved_groups and st.button("**Return to Active Group**"):
         st.session_state.show_group_lobby = False
         if st.session_state.active_group_id is None:
             st.session_state.active_group_id = approved_groups[0]["group_id"]
@@ -1217,44 +1363,46 @@ if st.session_state.active_group_id is None or st.session_state.show_group_lobby
     pending_my_groups = [g for g in user_groups if g["status"] == "PENDING"]
     if pending_my_groups:
         for pg in pending_my_groups:
-            st.warning(f"⚠️ **Your request to join {pg['group_name']} is awaiting approval from the group owner.**")
+            st.warning(f"⚠️ **Membership request for {pg['group_name']} is pending owner approval.**")
 
     st.divider()
-    c_create, c_join = st.columns(2)
+    c_create, c_join = st.columns(2, gap="large")
     with c_create:
-        st.subheader("**Create a New Mess Group**")
-        with st.form("create_group_form"):
-            g_name = st.text_input("**Group / Mess Name**", placeholder="e.g. Hostel Block-B Mess")
-            g_max = st.number_input("**Number of Members**", min_value=2, max_value=25, value=5, step=1, format="%d")
-            if st.form_submit_button("**Create Group**", use_container_width=True, type="primary"):
-                if g_name.strip():
-                    new_gid = create_mess_group(g_name, g_max, current_user["user_id"], current_user["full_name"])
-                    st.session_state.active_group_id = new_gid
-                    st.session_state.selected_cycle_key = None
-                    st.session_state.show_group_lobby = False
-                    st.session_state.current_view = "HOME"
-                    st.rerun()
-                else:
-                    st.error("**Please enter a valid group name.**")
-
-    with c_join:
-        st.subheader("**Join an Existing Group**")
-        with st.form("join_group_form"):
-            join_code_input = st.text_input("**Enter Group Invite Code**", value=invite_code_param, placeholder="e.g. A1B2C3D4")
-            if st.form_submit_button("**Send Join Request**", use_container_width=True):
-                if join_code_input.strip():
-                    ok, msg = request_join_group(join_code_input, current_user["user_id"], current_user["full_name"])
-                    if ok:
-                        st.success(msg)
+        with st.container(border=True):
+            st.subheader("**Create New Mess Group**")
+            with st.form("create_group_form"):
+                g_name = st.text_input("**Group Name**", placeholder="e.g. Block-B Hostel Mess")
+                g_max = st.number_input("**Total Members**", min_value=2, max_value=25, value=5, step=1, format="%d")
+                if st.form_submit_button("**Create Group**", use_container_width=True, type="primary"):
+                    if g_name.strip():
+                        new_gid = create_mess_group(g_name, g_max, current_user["user_id"], current_user["full_name"])
+                        st.session_state.active_group_id = new_gid
+                        st.session_state.selected_cycle_key = None
+                        st.session_state.show_group_lobby = False
+                        st.session_state.current_view = "HOME"
                         st.rerun()
                     else:
-                        st.error(msg)
-                else:
-                    st.error("**Please enter a Group Code.**")
+                        st.error("**Please enter a valid group name.**")
+
+    with c_join:
+        with st.container(border=True):
+            st.subheader("**Join Existing Group**")
+            with st.form("join_group_form"):
+                join_code_input = st.text_input("**Group Invite Code**", value=invite_code_param, placeholder="Enter 8-character code")
+                if st.form_submit_button("**Request Access**", use_container_width=True):
+                    if join_code_input.strip():
+                        ok, msg = request_join_group(join_code_input, current_user["user_id"], current_user["full_name"])
+                        if ok:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                    else:
+                        st.error("**Please enter a valid Invite Code.**")
     st.stop()
 
 # ==============================================================================
-# PHASE 3: ACTIVE GROUP FRONT PAGE & MONTHLY CYCLE ENGINE
+# PHASE 3: ACTIVE GROUP WORKSPACE
 # ==============================================================================
 active_gid = st.session_state.active_group_id
 group_info = get_group_details(active_gid)
@@ -1264,7 +1412,6 @@ if not group_info:
 
 is_owner = (group_info["owner_id"] == current_user["user_id"])
 
-# Load open monthly cycles (Current Active Month + optional 1 Previous Month awaiting archive/delete)
 open_months = get_group_Open_months(active_gid)
 active_month_row = next((m for m in open_months if m["status"] == "ACTIVE"), open_months[-1])
 prev_month_row = next((m for m in open_months if m["status"] == "PREVIOUS"), None)
@@ -1276,7 +1423,6 @@ selected_month_row = next((m for m in open_months if m["cycle_key"] == st.sessio
 current_scoped_gid = scope_gid(active_gid, selected_month_row["cycle_key"])
 current_purchases_for_label = load_purchases(current_scoped_gid)
 
-# Automatically compute dynamic month label (e.g. "November 2026" or "November - December 2026")
 live_month_denotation = get_dynamic_month_label(
     selected_month_row["start_month"],
     int(selected_month_row["start_year"]),
@@ -1284,21 +1430,28 @@ live_month_denotation = get_dynamic_month_label(
     is_active=(selected_month_row["status"] == "ACTIVE")
 )
 
+role_text = "Owner" if is_owner else "Member"
+
 if is_owner:
-    hdr_left, hdr_share, hdr_profile = st.columns([6, 2, 2])
+    hdr_left, hdr_share, hdr_profile = st.columns([6.4, 1.8, 1.8])
     with hdr_left:
         st.markdown(
-            f"<h2 style='margin:0;'><b>{group_info['group_name']}</b> "
-            f"<span style='font-size:15px; color:#94a3b8; font-weight:bold;'>(Owner)</span></h2>"
-            f"<div style='margin-top:4px;'><span style='background:#1e3a8a; color:#f8fafc; padding:4px 12px; border-radius:6px; font-weight:800; font-size:14px;'>"
-            f"📊 MONTH CYCLE: {live_month_denotation.upper()} ({selected_month_row['status']})</span></div>",
+            f"""
+            <div class="group-header-card">
+                <div>
+                    <span class="group-title-text">{group_info['group_name']}</span>
+                    <span class="role-pill">{role_text}</span>
+                </div>
+                <div class="cycle-pill">📊 {live_month_denotation.upper()}</div>
+            </div>
+            """,
             unsafe_allow_html=True
         )
     with hdr_share:
-        with st.popover("**Share Group Link**", use_container_width=True):
-            st.markdown("**Share Group Link:**")
+        with st.popover("**Invite Members**", use_container_width=True):
+            st.markdown("**Invite Link**")
             st.code(f"https://grocery-expenditure-m.streamlit.app/?join={active_gid}", language="text")
-            st.markdown("**Group Invite Code:**")
+            st.markdown("**Invite Code**")
             st.code(active_gid, language="text")
     with hdr_profile:
         render_profile_popover(current_user, user_groups, active_gid, group_info)
@@ -1306,107 +1459,106 @@ else:
     hdr_left, hdr_profile = st.columns([8, 2])
     with hdr_left:
         st.markdown(
-            f"<h2 style='margin:0;'><b>{group_info['group_name']}</b> "
-            f"<span style='font-size:15px; color:#94a3b8; font-weight:bold;'>(Member)</span></h2>"
-            f"<div style='margin-top:4px;'><span style='background:#1e3a8a; color:#f8fafc; padding:4px 12px; border-radius:6px; font-weight:800; font-size:14px;'>"
-            f"📊 MONTH CYCLE: {live_month_denotation.upper()} ({selected_month_row['status']})</span></div>",
+            f"""
+            <div class="group-header-card">
+                <div>
+                    <span class="group-title-text">{group_info['group_name']}</span>
+                    <span class="role-pill">{role_text}</span>
+                </div>
+                <div class="cycle-pill">📊 {live_month_denotation.upper()}</div>
+            </div>
+            """,
             unsafe_allow_html=True
         )
     with hdr_profile:
         render_profile_popover(current_user, user_groups, active_gid, group_info)
 
-# ----------------- MONTH CYCLE SWITCHER & OWNER MONTHLY MANAGER -----------------
-bar_col1, bar_col2 = st.columns([6, 4])
-with bar_col1:
-    if len(open_months) > 1:
-        cycle_options = {
-            m["cycle_key"]: f"{get_dynamic_month_label(m['start_month'], int(m['start_year']), load_purchases(scope_gid(active_gid, m['cycle_key'])), m['status']=='ACTIVE')} [{m['status']}]"
-            for m in open_months
-        }
-        chosen_ck = st.radio(
-            "**Select Active or Previous Month Sheet:**",
-            options=list(cycle_options.keys()),
-            format_func=lambda k: f"**{cycle_options[k]}**",
-            index=list(cycle_options.keys()).index(st.session_state.selected_cycle_key),
-            horizontal=True
-        )
-        if chosen_ck != st.session_state.selected_cycle_key:
-            st.session_state.selected_cycle_key = chosen_ck
-            st.rerun()
+# ----------------- MONTH CYCLE SWITCHER & OWNER CYCLE CONTROLS -----------------
+if len(open_months) > 1 or is_owner:
+    bar_col1, bar_col2 = st.columns([6, 4])
+    with bar_col1:
+        if len(open_months) > 1:
+            cycle_options = {
+                m["cycle_key"]: f"{get_dynamic_month_label(m['start_month'], int(m['start_year']), load_purchases(scope_gid(active_gid, m['cycle_key'])), m['status']=='ACTIVE')} ({m['status'].title()})"
+                for m in open_months
+            }
+            chosen_ck = st.radio(
+                "**Billing Cycle**",
+                options=list(cycle_options.keys()),
+                format_func=lambda k: f"**{cycle_options[k]}**",
+                index=list(cycle_options.keys()).index(st.session_state.selected_cycle_key),
+                horizontal=True
+            )
+            if chosen_ck != st.session_state.selected_cycle_key:
+                st.session_state.selected_cycle_key = chosen_ck
+                st.rerun()
 
-with bar_col2:
-    if is_owner:
-        with st.expander("📊 **Owner Monthly Cycle & PDF Archive Manager**", expanded=False):
-            st.markdown("**Rule:** Create the **New Month** first. Once created, you can archive (`<10 KB` PDF) and delete the **Previous Month**.")
-            all_month_names = [
-                "January", "February", "March", "April", "May", "June",
-                "July", "August", "September", "October", "November", "December"
-            ]
-            curr_idx = all_month_names.index(active_month_row["start_month"]) if active_month_row["start_month"] in all_month_names else datetime.now().month - 1
-            default_next_idx = (curr_idx + 1) % 12
-            default_next_year = int(active_month_row["start_year"]) + (1 if default_next_idx == 0 else 0)
+    with bar_col2:
+        if is_owner:
+            with st.expander("📊 **Billing Cycle Management**", expanded=False):
+                all_month_names = [
+                    "January", "February", "March", "April", "May", "June",
+                    "July", "August", "September", "October", "November", "December"
+                ]
+                curr_idx = all_month_names.index(active_month_row["start_month"]) if active_month_row["start_month"] in all_month_names else datetime.now().month - 1
+                default_next_idx = (curr_idx + 1) % 12
+                default_next_year = int(active_month_row["start_year"]) + (1 if default_next_idx == 0 else 0)
 
-            st.markdown("#### **Step 1: Create New Month**")
-            with st.form("create_new_month_form", clear_on_submit=True):
-                cm1, cm2 = st.columns(2)
-                with cm1:
-                    next_m_name = st.selectbox("**New Month**", all_month_names, index=default_next_idx)
-                with cm2:
-                    next_y_num = st.number_input("**Year**", min_value=2024, max_value=2100, value=default_next_year, step=1)
-                owner_pwd_create = st.text_input("**Owner Password (Required to Create New Month)**", type="password")
-                if st.form_submit_button("✅ **Create New Month Cycle**", use_container_width=True, type="primary"):
-                    if not verify_user_password(current_user["user_id"], owner_pwd_create):
-                        st.error("❌ **Incorrect Owner Password.**")
-                    else:
-                        new_ck, new_lbl = create_new_month_cycle(
-                            active_gid, next_m_name, int(next_y_num),
-                            current_user["full_name"], current_user["user_id"]
-                        )
-                        st.session_state.selected_cycle_key = new_ck
-                        st.toast(f"Created new month cycle: {new_lbl}", icon="✅")
-                        st.rerun()
-
-            st.divider()
-            st.markdown("#### **Step 2: Archive (<10KB PDF) & Delete Previous Month**")
-            if prev_month_row is None:
-                st.caption("⚠️ **Create a New Month in Step 1 first before deleting the current month.**")
-            else:
-                prev_label_preview = get_dynamic_month_label(
-                    prev_month_row["start_month"],
-                    int(prev_month_row["start_year"]),
-                    load_purchases(scope_gid(active_gid, prev_month_row["cycle_key"])),
-                    is_active=False
-                )
-                st.warning(
-                    f"⚠️ **Previous Month Ready for Deletion:** `{prev_label_preview}`\n\n"
-                    f"Deleting `{prev_label_preview}` will automatically compile its Meal Chart & Expenditure into a **`< 10 KB` PDF**, save the PDF in the database, download a local `.pdf` copy to your device, and erase the old month's raw database rows."
-                )
-                with st.form("delete_prev_month_form", clear_on_submit=True):
-                    owner_pwd_del = st.text_input("**Owner Password (Required to Archive & Delete Previous Month)**", type="password")
-                    if st.form_submit_button("🗑️ **Save <10KB PDF & Delete Previous Month**", use_container_width=True, type="primary"):
-                        if not verify_user_password(current_user["user_id"], owner_pwd_del):
-                            st.error("❌ **Incorrect Owner Password.**")
+                st.markdown("##### **1. Start New Month**")
+                with st.form("create_new_month_form", clear_on_submit=True):
+                    cm1, cm2 = st.columns(2)
+                    with cm1:
+                        next_m_name = st.selectbox("**Month**", all_month_names, index=default_next_idx)
+                    with cm2:
+                        next_y_num = st.number_input("**Year**", min_value=2024, max_value=2100, value=default_next_year, step=1)
+                    owner_pwd_create = st.text_input("**Confirm Password**", type="password")
+                    if st.form_submit_button("✅ **Create New Month**", use_container_width=True, type="primary"):
+                        if not verify_user_password(current_user["user_id"], owner_pwd_create):
+                            st.error("❌ **Incorrect password.**")
                         else:
-                            pdf_bytes, fname, fsize, flabel = archive_and_delete_previous_month(
-                                active_gid,
-                                group_info["group_name"],
-                                prev_month_row,
-                                active_month_row,
-                                current_user["full_name"],
-                                current_user["user_id"]
+                            new_ck, new_lbl = create_new_month_cycle(
+                                active_gid, next_m_name, int(next_y_num),
+                                current_user["full_name"], current_user["user_id"]
                             )
-                            st.session_state.selected_cycle_key = active_month_row["cycle_key"]
-                            st.session_state.pending_auto_pdf = {"bytes": pdf_bytes, "filename": fname}
-                            st.toast(f"Archived {flabel} ({fsize/1024:.2f} KB PDF) & deleted old records!", icon="🗑️")
+                            st.session_state.selected_cycle_key = new_ck
+                            st.toast(f"Started {new_lbl}", icon="✅")
                             st.rerun()
+
+                if prev_month_row is not None:
+                    st.divider()
+                    prev_label_preview = get_dynamic_month_label(
+                        prev_month_row["start_month"],
+                        int(prev_month_row["start_year"]),
+                        load_purchases(scope_gid(active_gid, prev_month_row["cycle_key"])),
+                        is_active=False
+                    )
+                    st.markdown(f"##### **2. Close & Archive {prev_label_preview}**")
+                    with st.form("delete_prev_month_form", clear_on_submit=True):
+                        owner_pwd_del = st.text_input("**Confirm Password**", type="password")
+                        if st.form_submit_button("🗑️ **Archive PDF & Delete Previous Month**", use_container_width=True, type="primary"):
+                            if not verify_user_password(current_user["user_id"], owner_pwd_del):
+                                st.error("❌ **Incorrect password.**")
+                            else:
+                                pdf_bytes, fname, fsize, flabel = archive_and_delete_previous_month(
+                                    active_gid,
+                                    group_info["group_name"],
+                                    prev_month_row,
+                                    active_month_row,
+                                    current_user["full_name"],
+                                    current_user["user_id"]
+                                )
+                                st.session_state.selected_cycle_key = active_month_row["cycle_key"]
+                                st.session_state.pending_auto_pdf = {"bytes": pdf_bytes, "filename": fname}
+                                st.toast(f"Archived {flabel} statement.", icon="✅")
+                                st.rerun()
 
 if is_owner:
     pending_list = get_pending_requests(active_gid)
     if pending_list:
-        with st.expander(f"⚠️ **Pending Member Join Requests ({len(pending_list)})**", expanded=True):
+        with st.expander(f"⚠️ **Pending Approvals ({len(pending_list)})**", expanded=True):
             for req in pending_list:
-                r1, r2, r3 = st.columns([5, 2, 2])
-                r1.write(f"**{req['full_name']}** (`@{req['user_id']}`) **wants to join.**")
+                r1, r2, r3 = st.columns([6, 2, 2])
+                r1.markdown(f"**{req['full_name']}** (`@{req['user_id']}`)")
                 if r2.button("✅ **Approve**", key=f"app_{req['user_id']}", use_container_width=True, type="primary"):
                     ok, msg = approve_member(
                         active_gid, req["user_id"], req["full_name"],
@@ -1417,54 +1569,58 @@ if is_owner:
                         st.rerun()
                     else:
                         st.error(msg)
-                if r3.button("❌ **Reject**", key=f"rej_{req['user_id']}", use_container_width=True):
+                if r3.button("❌ **Decline**", key=f"rej_{req['user_id']}", use_container_width=True):
                     reject_member(
                         active_gid, req["user_id"], req["full_name"],
                         current_user["full_name"], current_user["user_id"]
                     )
                     st.rerun()
 
-st.divider()
+st.write("")
 
 # ----------------- 1. GROUP HOME VIEW -----------------
 if st.session_state.current_view == "HOME":
-    st.markdown(
-        f"<h3 style='text-align: center; margin-top: 10px;'><b>MESS PORTAL DASHBOARD — {live_month_denotation.upper()}</b></h3>",
-        unsafe_allow_html=True
-    )
-    st.write("")
+    group_records = load_meal_records(active_gid, selected_month_row["cycle_key"])
+    purchases = load_purchases(current_scoped_gid)
+    total_meals, member_meals = calculate_member_meals(group_records)
+    total_spent = sum(float(p.get("amount", 0.0)) for p in purchases)
+    per_meal_rate = (total_spent / total_meals) if total_meals > 0 else 0.0
 
+    k1, k2, k3 = st.columns(3)
+    k1.metric("**Total Expenditure**", f"₹{total_spent:,.0f}")
+    k2.metric("**Total Meals**", f"{total_meals:.1f}")
+    k3.metric("📈 **Current Meal Rate**", f"₹{per_meal_rate:.2f}")
+
+    st.write("")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        if st.button("📊 **MESS MEAL CHART**", use_container_width=True, type="primary"):
+        if st.button("📊 **MEAL CHART**", use_container_width=True, type="primary"):
             st.session_state.current_view = "MEAL_CHART"
             st.rerun()
     with col2:
-        if st.button("📈 **MESS EXPENDITURE**", use_container_width=True):
+        if st.button("📈 **EXPENDITURE**", use_container_width=True):
             st.session_state.current_view = "EXPENDITURE"
             st.session_state.confirm_delete_expense = False
             st.rerun()
     with col3:
-        if st.button("**ACTIVITY HISTORY**", use_container_width=True):
+        if st.button("**ACTIVITY LOGS**", use_container_width=True):
             st.session_state.current_view = "HISTORY"
             st.rerun()
     with col4:
-        if st.button("📑 **SAVED PDF ARCHIVES**", use_container_width=True):
+        if st.button("📑 **STATEMENTS**", use_container_width=True):
             st.session_state.current_view = "ARCHIVES"
             st.rerun()
 
 # ----------------- 2. MESS MEAL CHART VIEW -----------------
 elif st.session_state.current_view == "MEAL_CHART":
     group_records = load_meal_records(active_gid, selected_month_row["cycle_key"])
-    top1, top2 = st.columns([1, 8])
+    top1, top2 = st.columns([1.2, 8.8])
     with top1:
-        if st.button("**Back**"):
+        if st.button("**Back**", use_container_width=True):
             st.session_state.current_view = "HOME"
             st.rerun()
     with top2:
-        st.subheader(f"📊 **Mess Meal Chart ({live_month_denotation}) — {group_info['max_members']} Members**")
-
-    st.caption("**NOTE: Member names are locked to registered account holders and cannot be edited.**")
+        st.subheader(f"📊 **Meal Chart — {live_month_denotation}**")
 
     updated_records = mess_chart_editor(
         records=group_records,
@@ -1482,20 +1638,20 @@ elif st.session_state.current_view == "MEAL_CHART":
             current_user["user_id"]
         )
         if num_changes > 0:
-            st.toast(f"Saved {num_changes} change(s) & logged to Activity History!", icon="✅")
+            st.toast(f"Saved {num_changes} update(s).", icon="✅")
             st.rerun()
 
 # ----------------- 3. MESS EXPENDITURE VIEW -----------------
 elif st.session_state.current_view == "EXPENDITURE":
     group_records = load_meal_records(active_gid, selected_month_row["cycle_key"])
-    top1, top2 = st.columns([1, 8])
+    top1, top2 = st.columns([1.2, 8.8])
     with top1:
-        if st.button("**Back**"):
+        if st.button("**Back**", use_container_width=True):
             st.session_state.current_view = "HOME"
             st.session_state.confirm_delete_expense = False
             st.rerun()
     with top2:
-        st.subheader(f"📈 **Mess Expenditure & Settlements ({live_month_denotation})**")
+        st.subheader(f"📈 **Expenditure & Settlements — {live_month_denotation}**")
 
     purchases = load_purchases(current_scoped_gid)
     total_meals, member_meals = calculate_member_meals(group_records)
@@ -1505,12 +1661,12 @@ elif st.session_state.current_view == "EXPENDITURE":
     per_meal_rate = (total_spent / total_meals) if total_meals > 0 else 0.0
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("**Total Mess Expenditure**", f"₹{total_spent:,.0f}")
-    m2.metric("**Total Meals Eaten**", f"{total_meals:.1f}")
+    m1.metric("**Total Expenditure**", f"₹{total_spent:,.0f}")
+    m2.metric("**Total Meals**", f"{total_meals:.1f}")
     m3.metric("📈 **Per-Meal Rate**", f"₹{per_meal_rate:.2f}")
 
-    st.divider()
-    st.markdown("### 📊 **Member Summary & Settlement Overview**")
+    st.write("")
+    st.markdown("#### 📊 **Settlement Overview**")
 
     summary_rows = []
     member_purchases_map = {m: [] for m in active_members}
@@ -1526,34 +1682,34 @@ elif st.session_state.current_view == "EXPENDITURE":
         balance = bought_amt - eaten_cost
         summary_rows.append({
             "Member": member,
-            "Meals Eaten": meals_eaten,
-            "Grocery Bought (₹)": int(round(bought_amt)),
-            "Eaten Cost (₹)": round(eaten_cost, 2),
+            "Meals": meals_eaten,
+            "Contributed (₹)": int(round(bought_amt)),
+            "Consumed (₹)": round(eaten_cost, 2),
             "Net Balance (₹)": round(balance, 2),
-            "Settlement Status": "Refund Due" if balance >= 0 else "To Pay"
+            "Status": "Refund Due" if balance >= 0 else "To Pay"
         })
 
     df_summary = pd.DataFrame(summary_rows)
     if not df_summary.empty:
         styled_summary = df_summary.style.map(
-            lambda val: f"color: {'#15803d' if val >= 0 else '#dc2626'}; font-weight: bold;",
+            lambda val: f"color: {'#22c55e' if val >= 0 else '#ef4444'}; font-weight: 700;",
             subset=["Net Balance (₹)"]
         )
         st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
-    with st.expander("**+ Add New Purchase / Expense**", expanded=True):
+    with st.expander("**Record New Purchase**", expanded=True):
         with st.form("purchase_form", clear_on_submit=True):
             col_d, col_item, col_buyer, col_amt = st.columns([2, 4, 3, 2])
             with col_d:
                 p_date = st.date_input("**Date**", value=date.today())
             with col_item:
-                p_item = st.text_input("**Item Name**")
+                p_item = st.text_input("**Description**", placeholder="Item details")
             with col_buyer:
-                p_buyer = st.selectbox("**Purchased By**", active_members)
+                p_buyer = st.selectbox("**Paid By**", active_members)
             with col_amt:
-                p_amount = st.number_input("**₹ Amount**", min_value=1, step=1, value=None, format="%d", placeholder="₹")
+                p_amount = st.number_input("**Amount (₹)**", min_value=1, step=1, value=None, format="%d", placeholder="0")
 
-            if st.form_submit_button("**Add Expense**", use_container_width=True, type="primary"):
+            if st.form_submit_button("**Add Purchase**", use_container_width=True, type="primary"):
                 if p_amount is not None and p_amount > 0 and p_item.strip():
                     add_purchase(
                         current_scoped_gid,
@@ -1565,13 +1721,13 @@ elif st.session_state.current_view == "EXPENDITURE":
                         current_user["user_id"]
                     )
                     st.session_state.confirm_delete_expense = False
-                    st.toast(f"Added ₹{int(p_amount):,} for {p_item.strip()}", icon="✅")
+                    st.toast(f"Added ₹{int(p_amount):,} ({p_item.strip()})", icon="✅")
                     st.rerun()
                 else:
-                    st.error("**Please enter an item name and amount.**")
+                    st.error("**Please enter both description and amount.**")
 
     st.divider()
-    st.markdown("### 📑 **Individual Member Purchase Logs & Statements**")
+    st.markdown("#### 📑 **Individual Member Ledgers**")
     if active_members:
         member_tabs = st.tabs([f"**{m}**" for m in active_members])
         for i, member in enumerate(active_members):
@@ -1583,88 +1739,80 @@ elif st.session_state.current_view == "EXPENDITURE":
                 m_net = m_bought_total - m_eaten_cost
 
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("**Meals Eaten**", f"{m_meals:.1f}")
-                c2.metric("**Total Grocery Bought**", f"₹{m_bought_total:,.0f}")
-                c3.metric("**Amount Eaten**", f"₹{m_eaten_cost:,.2f}")
-                c4.metric(f"**Balance ({'Refund' if m_net >= 0 else 'Due to Pay'})**", f"₹{abs(m_net):,.2f}")
+                c1.metric("**Meals**", f"{m_meals:.1f}")
+                c2.metric("**Contributed**", f"₹{m_bought_total:,.0f}")
+                c3.metric("**Consumed**", f"₹{m_eaten_cost:,.2f}")
+                c4.metric(f"**{'Refund' if m_net >= 0 else 'Payable'}**", f"₹{abs(m_net):,.2f}")
 
                 if m_items:
                     df_m = pd.DataFrame(m_items)[["date", "item", "amount"]].copy()
                     df_m["amount"] = df_m["amount"].apply(lambda x: f"₹{int(float(x)):,}")
-                    df_m = df_m.rename(columns={"date": "Date", "item": "Item Name", "amount": "Amount (₹)"})
+                    df_m = df_m.rename(columns={"date": "Date", "item": "Description", "amount": "Amount"})
                     st.dataframe(df_m, use_container_width=True, hide_index=True)
-                else:
-                    st.info(f"**No grocery purchases recorded for {member} yet.**")
 
-    st.write("")
-    col_del, col_csv = st.columns([2, 2])
-    with col_del:
-        if purchases:
+    if purchases:
+        st.write("")
+        col_del, col_csv = st.columns([2, 2])
+        with col_del:
             if not st.session_state.confirm_delete_expense:
-                if st.button("🗑️ **Delete Most Recent Purchase**", use_container_width=True):
+                if st.button("🗑️ **Remove Last Entry**", use_container_width=True):
                     st.session_state.confirm_delete_expense = True
                     st.rerun()
             else:
                 last_exp = purchases[-1]
                 st.warning(
-                    f"⚠️ **Confirm Deletion of Last Updated Expense?**\n\n"
-                    f"- **Item:** {last_exp['item']}\n"
-                    f"- **Amount:** ₹{int(float(last_exp['amount'])):,}\n"
-                    f"- **Purchased By:** {last_exp['buyer']} (Date: {last_exp['date']})\n\n"
-                    f"***This deletion will be permanently logged in the Activity History.***"
+                    f"⚠️ **Delete {last_exp['item']} (₹{int(float(last_exp['amount'])):,}) paid by {last_exp['buyer']}?**"
                 )
                 c_yes, c_no = st.columns(2)
-                if c_yes.button("⚠️ **Yes, Permanently Delete**", type="primary", use_container_width=True):
+                if c_yes.button("⚠️ **Confirm Delete**", type="primary", use_container_width=True):
                     delete_last_purchase(current_scoped_gid, current_user["full_name"], current_user["user_id"])
                     st.session_state.confirm_delete_expense = False
-                    st.toast("Last purchase deleted & recorded in History.", icon="🗑️")
+                    st.toast("Entry removed.", icon="🗑️")
                     st.rerun()
                 if c_no.button("✖️ **Cancel**", use_container_width=True):
                     st.session_state.confirm_delete_expense = False
                     st.rerun()
 
-    with col_csv:
-        if purchases:
+        with col_csv:
             csv_data = pd.DataFrame(purchases).to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📊 **Export Full Purchase Log (CSV)**",
+                label="📊 **Export Ledger (CSV)**",
                 data=csv_data,
-                file_name=f"mess_purchases_{active_gid}_{live_month_denotation.replace(' ', '_')}.csv",
+                file_name=f"ledger_{active_gid}_{live_month_denotation.replace(' ', '_')}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
 
-# ----------------- 4. COMPACT HISTORY + SIDE VISUAL DIFF INSPECTOR -----------------
+# ----------------- 4. ACTIVITY LOGS & DIFF INSPECTOR -----------------
 elif st.session_state.current_view == "HISTORY":
-    top1, top2 = st.columns([1, 8])
+    top1, top2 = st.columns([1.2, 8.8])
     with top1:
-        if st.button("**Back**"):
+        if st.button("**Back**", use_container_width=True):
             st.session_state.current_view = "HOME"
             st.rerun()
     with top2:
-        st.subheader(f"📊 **Activity History & Visual Change Inspector ({live_month_denotation})**")
+        st.subheader(f"📊 **Activity Logs — {live_month_denotation}**")
 
     logs = load_activity_logs(current_scoped_gid)
     if not logs:
-        st.info("**No activity recorded for this month cycle yet.**")
+        st.info("**No activity recorded for this cycle yet.**")
     else:
         if st.session_state.selected_log_id is None or not any(l["id"] == st.session_state.selected_log_id for l in logs):
             st.session_state.selected_log_id = logs[0]["id"]
 
-        left_col, right_col = st.columns([4, 6], gap="large")
+        left_col, right_col = st.columns([4.2, 5.8], gap="large")
 
         with left_col:
-            st.markdown("#### **Recent Actions (Click to Inspect)**")
             badge_labels = {
-                "MEAL_UPDATE": "📊 [MEAL UPDATE]",
-                "EXPENSE_ADD": "📈 [EXPENSE ADDED]",
-                "EXPENSE_DELETE": "🗑️ [EXPENSE DELETED]",
-                "GROUP_ADMIN": "[ADMIN]"
+                "MEAL_UPDATE": "📊",
+                "EXPENSE_ADD": "📈",
+                "EXPENSE_DELETE": "🗑️",
+                "GROUP_ADMIN": "📑"
             }
 
             for log_item in logs:
                 parsed = parse_log_details(log_item)
-                prefix = badge_labels.get(log_item["action_type"], "[LOG]")
+                prefix = badge_labels.get(log_item["action_type"], "📊")
                 short_title = parsed.get("summary", log_item["action_type"])
                 is_selected = (log_item["id"] == st.session_state.selected_log_id)
 
@@ -1672,9 +1820,9 @@ elif st.session_state.current_view == "HISTORY":
                     c_info, c_btn = st.columns([4, 1.3])
                     with c_info:
                         st.markdown(f"**{prefix} {short_title}**")
-                        st.caption(f"**By:** {log_item['actor_name']} • **Time:** {log_item['timestamp']}")
+                        st.caption(f"**{log_item['actor_name']}** • {log_item['timestamp']}")
                     with c_btn:
-                        btn_label = "**Viewing**" if is_selected else "**View**"
+                        btn_label = "**Active**" if is_selected else "**Inspect**"
                         btn_type = "primary" if is_selected else "secondary"
                         if st.button(btn_label, key=f"sel_log_{log_item['id']}", use_container_width=True, type=btn_type):
                             st.session_state.selected_log_id = log_item["id"]
@@ -1686,30 +1834,26 @@ elif st.session_state.current_view == "HISTORY":
             act_type = selected_log["action_type"]
 
             with st.container(border=True):
-                st.markdown("### **Action Details**")
-                st.markdown(
-                    f"**Performed By:** `{selected_log['actor_name']}` (`@{selected_log['actor_id']}`)  \n"
-                    f"**Timestamp:** `{selected_log['timestamp']}`"
-                )
+                st.markdown("#### **Inspection Details**")
+                st.caption(f"**User:** `{selected_log['actor_name']}` (`@{selected_log['actor_id']}`) • **Timestamp:** `{selected_log['timestamp']}`")
                 st.divider()
 
                 if act_type == "MEAL_UPDATE":
                     changes = parsed_sel.get("changes", [])
                     if changes:
-                        st.markdown("#### 📊 **Highlighted Cell Changes on Meal Chart**")
                         cards_html = "<div style='display:flex; flex-direction:column; gap:10px; margin-bottom:18px;'>"
                         for ch in changes:
-                            day_badge = f"Day {ch['day']}" if ch.get("day") != "-" else "Member Name"
+                            day_badge = f"Day {ch['day']}" if ch.get("day") != "-" else "Member"
                             cards_html += f"""
-                            <div style="background:#1e293b; border-left:5px solid #f59e0b; padding:12px 16px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; color:#f8fafc;">
+                            <div style="background:#1e293b; border-left:4px solid #3b82f6; padding:12px 16px; border-radius:10px; display:flex; justify-content:space-between; align-items:center; color:#f8fafc;">
                                 <div>
-                                    <span style="background:#3b82f6; color:white; padding:3px 8px; border-radius:4px; font-size:12px; font-weight:800; margin-right:8px;">{ch.get('member')}</span>
+                                    <span style="background:#2563eb; color:white; padding:3px 10px; border-radius:6px; font-size:12px; font-weight:800; margin-right:8px;">{ch.get('member')}</span>
                                     <span style="font-weight:700; font-size:14px; color:#e2e8f0;">{ch.get('meal')}</span>
-                                    <span style="color:#fbbf24; font-weight:800; margin-left:8px;">({day_badge})</span>
+                                    <span style="color:#93c5fd; font-weight:700; margin-left:8px;">({day_badge})</span>
                                 </div>
                                 <div style="display:flex; align-items:center; gap:10px;">
                                     <span style="background:#7f1d1d; color:#fca5a5; padding:4px 10px; border-radius:6px; text-decoration:line-through; font-weight:700;">{ch.get('old')}</span>
-                                    <span style="color:#94a3b8; font-weight:bold;">➔</span>
+                                    <span style="color:#94a3b8; font-weight:bold;">→</span>
                                     <span style="background:#14532d; color:#86efac; padding:4px 12px; border-radius:6px; font-weight:800; border:1px solid #22c55e;">{ch.get('new')}</span>
                                 </div>
                             </div>
@@ -1719,7 +1863,6 @@ elif st.session_state.current_view == "HISTORY":
 
                         cell_changes = [c for c in changes if c.get("kind") == "cell"]
                         if cell_changes:
-                            st.markdown("#### 📊 **Meal Chart Highlight Preview (Modified Cells in Orange/Green)**")
                             affected_members_map = {}
                             for c in cell_changes:
                                 m_name = c["member"]
@@ -1727,17 +1870,17 @@ elif st.session_state.current_view == "HISTORY":
 
                             changed_days = sorted(list({int(c["day"]) for c in cell_changes if str(c["day"]).isdigit()}))
                             preview_html = "<div style='overflow-x:auto;'><table style='width:100%; border-collapse:collapse; font-size:12px; text-align:center;'>"
-                            preview_html += "<tr style='background:#0b57d0; color:white; font-weight:bold;'><th style='padding:6px; border:1px solid #334155;'>Member</th><th style='padding:6px; border:1px solid #334155;'>Meal</th>"
+                            preview_html += "<tr style='background:#1e3a8a; color:white; font-weight:bold;'><th style='padding:8px; border:1px solid #334155;'>Member</th><th style='padding:8px; border:1px solid #334155;'>Meal</th>"
                             for d_num in changed_days:
-                                preview_html += f"<th style='padding:6px; border:1px solid #334155; background:#d97706; font-weight:bold;'>Day {d_num}</th>"
+                                preview_html += f"<th style='padding:8px; border:1px solid #334155; background:#2563eb; font-weight:bold;'>Day {d_num}</th>"
                             preview_html += "</tr>"
 
                             for m_name, coords in affected_members_map.items():
                                 for m_idx, meal_type in enumerate(MEALS):
                                     preview_html += "<tr>"
                                     if m_idx == 0:
-                                        preview_html += f"<td rowspan='3' style='background:#1e3a8a; color:white; font-weight:bold; padding:6px; border:1px solid #334155;'>{m_name}</td>"
-                                    preview_html += f"<td style='background:#1d4ed8; color:white; font-weight:700; padding:5px; border:1px solid #334155;'>{meal_type}</td>"
+                                        preview_html += f"<td rowspan='3' style='background:#0f172a; color:white; font-weight:bold; padding:8px; border:1px solid #334155;'>{m_name}</td>"
+                                    preview_html += f"<td style='background:#1e293b; color:#cbd5e1; font-weight:700; padding:6px; border:1px solid #334155;'>{meal_type}</td>"
                                     for d_num in changed_days:
                                         key_coord = (meal_type, str(d_num))
                                         if key_coord in coords:
@@ -1749,22 +1892,22 @@ elif st.session_state.current_view == "HISTORY":
                                                 f"</td>"
                                             )
                                         else:
-                                            preview_html += "<td style='background:#0f172a; color:#64748b; padding:5px; border:1px solid #334155;'>—</td>"
+                                            preview_html += "<td style='background:#0f172a; color:#475569; padding:6px; border:1px solid #334155;'>—</td>"
                                     preview_html += "</tr>"
                             preview_html += "</table></div>"
                             st.markdown(preview_html, unsafe_allow_html=True)
                     else:
-                        st.info(f"**{parsed_sel.get('summary', 'Meal chart updated.')}**")
+                        st.info(f"**{parsed_sel.get('summary', 'Chart updated.')}**")
 
                 elif act_type == "EXPENSE_ADD":
                     st.markdown(
                         f"""
-                        <div style="background:#064e3b; border-left:6px solid #10b981; padding:16px; border-radius:8px; color:#ecfdf5;">
-                            <h4 style="margin:0 0 8px 0; color:#6ee7b7; font-weight:800;">📈 New Grocery Expense Added</h4>
-                            <p style="margin:4px 0;"><b>Item Purchased:</b> {parsed_sel.get('item', '-')}</p>
-                            <p style="margin:4px 0;"><b>Amount:</b> <span style="font-size:18px; font-weight:800; color:#34d399;">₹{parsed_sel.get('amount', 0):,}</span></p>
-                            <p style="margin:4px 0;"><b>Paid By:</b> {parsed_sel.get('buyer', '-')}</p>
-                            <p style="margin:4px 0;"><b>Purchase Date:</b> {parsed_sel.get('date', '-')}</p>
+                        <div style="background:rgba(6, 78, 59, 0.65); border:1px solid rgba(16, 185, 129, 0.4); border-left:5px solid #10b981; padding:18px; border-radius:12px; color:#ecfdf5;">
+                            <h4 style="margin:0 0 10px 0; color:#6ee7b7; font-weight:800;">📈 Purchase Recorded</h4>
+                            <p style="margin:6px 0;"><b>Description:</b> {parsed_sel.get('item', '-')}</p>
+                            <p style="margin:6px 0;"><b>Amount:</b> <span style="font-size:18px; font-weight:800; color:#34d399;">₹{parsed_sel.get('amount', 0):,}</span></p>
+                            <p style="margin:6px 0;"><b>Paid By:</b> {parsed_sel.get('buyer', '-')}</p>
+                            <p style="margin:6px 0;"><b>Date:</b> {parsed_sel.get('date', '-')}</p>
                         </div>
                         """,
                         unsafe_allow_html=True
@@ -1773,12 +1916,12 @@ elif st.session_state.current_view == "HISTORY":
                 elif act_type == "EXPENSE_DELETE":
                     st.markdown(
                         f"""
-                        <div style="background:#450a0a; border-left:6px solid #ef4444; padding:16px; border-radius:8px; color:#fef2f2;">
-                            <h4 style="margin:0 0 8px 0; color:#fca5a5; font-weight:800;">🗑️ Expense Entry Deleted</h4>
-                            <p style="margin:4px 0;"><b>Deleted Item:</b> {parsed_sel.get('item', '-')}</p>
-                            <p style="margin:4px 0;"><b>Deleted Amount:</b> <span style="font-size:18px; font-weight:800; color:#f87171; text-decoration:line-through;">₹{parsed_sel.get('amount', 0):,}</span></p>
-                            <p style="margin:4px 0;"><b>Originally Paid By:</b> {parsed_sel.get('buyer', '-')}</p>
-                            <p style="margin:4px 0;"><b>Original Date:</b> {parsed_sel.get('date', '-')}</p>
+                        <div style="background:rgba(69, 10, 10, 0.65); border:1px solid rgba(239, 68, 68, 0.4); border-left:5px solid #ef4444; padding:18px; border-radius:12px; color:#fef2f2;">
+                            <h4 style="margin:0 0 10px 0; color:#fca5a5; font-weight:800;">🗑️ Purchase Removed</h4>
+                            <p style="margin:6px 0;"><b>Description:</b> {parsed_sel.get('item', '-')}</p>
+                            <p style="margin:6px 0;"><b>Amount:</b> <span style="font-size:18px; font-weight:800; color:#f87171; text-decoration:line-through;">₹{parsed_sel.get('amount', 0):,}</span></p>
+                            <p style="margin:6px 0;"><b>Paid By:</b> {parsed_sel.get('buyer', '-')}</p>
+                            <p style="margin:6px 0;"><b>Date:</b> {parsed_sel.get('date', '-')}</p>
                         </div>
                         """,
                         unsafe_allow_html=True
@@ -1787,36 +1930,30 @@ elif st.session_state.current_view == "HISTORY":
                 else:
                     st.info(f"**{parsed_sel.get('summary', '')}**\n\n{parsed_sel.get('info', '')}")
 
-# ----------------- 5. SAVED <10KB MONTHLY PDF ARCHIVES VIEW -----------------
+# ----------------- 5. MONTHLY PDF STATEMENTS VIEW -----------------
 elif st.session_state.current_view == "ARCHIVES":
-    top1, top2 = st.columns([1, 8])
+    top1, top2 = st.columns([1.2, 8.8])
     with top1:
-        if st.button("**Back**"):
+        if st.button("**Back**", use_container_width=True):
             st.session_state.current_view = "HOME"
             st.rerun()
     with top2:
-        st.subheader("📑 **Archived Monthly PDF Statements (<10 KB Database Storage)**")
-
-    st.caption("**All deleted previous months are permanently preserved here in ultra-compact (<10 KB) PDF format.**")
+        st.subheader("📑 **Monthly Statements**")
 
     archives = load_pdf_archives(active_gid)
     if not archives:
-        st.info("**No monthly PDF archives stored yet. When the Group Owner archives and deletes a previous month, its PDF will appear here.**")
+        st.info("**No archived monthly statements available yet.**")
     else:
         for arch in archives:
             pdf_raw_bytes = base64.b64decode(arch["pdf_b64"])
-            size_kb = arch["size_bytes"] / 1024.0
             with st.container(border=True):
-                c1, c2, c3 = st.columns([5, 3, 2])
+                c1, c2 = st.columns([7.5, 2.5])
                 with c1:
-                    st.markdown(f"### 📊 **{arch['month_label']}**")
-                    st.caption(f"**Archived By:** {arch['archived_by']} • **Date:** {arch['archived_at']}")
+                    st.markdown(f"#### 📊 **{arch['month_label']}**")
+                    st.caption(f"**Closed By:** {arch['archived_by']} • **Date:** {arch['archived_at']}")
                 with c2:
-                    st.metric("**Database PDF Size**", f"{size_kb:.2f} KB")
-                with c3:
-                    st.write("")
                     st.download_button(
-                        label="📑 **Save PDF Locally**",
+                        label="📑 **Download PDF**",
                         data=pdf_raw_bytes,
                         file_name=arch["file_name"],
                         mime="application/pdf",
