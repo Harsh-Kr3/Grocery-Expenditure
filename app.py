@@ -1,6 +1,8 @@
 import os
 import json
 import uuid
+import zlib
+import base64
 import hashlib
 import sqlite3
 from datetime import date, datetime
@@ -45,6 +47,200 @@ def hash_password(password: str) -> str:
 
 def now_str() -> str:
     return datetime.now().strftime("%d %b %Y, %I:%M %p")
+
+def get_dynamic_month_label(start_month: str, start_year: int, purchases_list=None, is_active=True) -> str:
+    """
+    Automatically denotes the month (e.g., 'November 2026').
+    If dates spill over into the next month (e.g., December), automatically denotes 'November - December 2026'.
+    """
+    end_month = None
+    end_year = start_year
+
+    if is_active:
+        now = datetime.now()
+        curr_m = now.strftime("%B")
+        curr_y = now.year
+        if (curr_y > start_year) or (curr_y == start_year and curr_m != start_month):
+            end_month = curr_m
+            end_year = curr_y
+
+    if purchases_list:
+        for p in purchases_list:
+            d_str = str(p.get("date", ""))
+            try:
+                dt = datetime.strptime(d_str, "%Y-%m-%d")
+                pm = dt.strftime("%B")
+                py = dt.year
+                if pm != start_month:
+                    end_month = pm
+                    end_year = py
+            except Exception:
+                pass
+
+    if end_month and end_month != start_month:
+        if end_year != start_year:
+            return f"{start_month} {start_year} - {end_month} {end_year}"
+        return f"{start_month} - {end_month} {start_year}"
+    return f"{start_month} {start_year}"
+
+# ----------------- ULTRA-COMPACT (<10 KB) NATIVE PDF GENERATOR -----------------
+def _pdf_escape(text: str) -> str:
+    clean = str(text).encode("ascii", "replace").decode("ascii")
+    return clean.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+def _build_compressed_pdf_from_pages(pages_lines: list) -> bytes:
+    """Builds a valid PDF-1.4 binary using native Type1 Courier font & zlib FlateDecode (< 4 KB)."""
+    objects = []
+
+    # 1: Catalog, 2: Pages, 3: Font (Courier Bold/Regular Monospace for clean tables)
+    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+    objects.append(b"")  # Placeholder for Pages object
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>")
+
+    page_obj_ids = []
+    for lines in pages_lines:
+        content_cmds = ["BT", "/F1 7.5 Tf", "10 TL", "28 812 Td"]
+        for line in lines:
+            content_cmds.append(f"({_pdf_escape(line)}) Tj T*")
+        content_cmds.append("ET")
+        raw_stream = "\n".join(content_cmds).encode("latin-1")
+        comp_stream = zlib.compress(raw_stream, 9)
+
+        content_id = len(objects) + 1
+        stream_Global = (
+            f"<< /Length {len(comp_stream)} /Filter /FlateDecode >>\nstream\n".encode("latin-1")
+            + comp_stream
+            + b"\nendstream"
+        )
+        objects.append(stream_Global)
+
+        page_id = len(objects) + 1
+        page_obj = (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>"
+        ).encode("latin-1")
+        objects.append(page_obj)
+        page_obj_ids.append(page_id)
+
+    kids_str = " ".join(f"{pid} 0 R" for pid in page_obj_ids)
+    objects[1] = f"<< /Type /Pages /Kids [{kids_str}] /Count {len(page_obj_ids)} >>".encode("latin-1")
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for idx, obj_bytes in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out.extend(f"{idx} 0 obj\n".encode("latin-1"))
+        out.extend(obj_bytes)
+        out.extend(b"\nendobj\n")
+
+    xref_pos = len(out)
+    out.extend(f"xref\n0 {len(objects) + 1}\n".encode("latin-1"))
+    out.extend(b"0000000000 65535 f \n")
+    for off in offsets:
+        out.extend(f"{off:010d} 00000 n \n".encode("latin-1"))
+
+    out.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF".encode("latin-1")
+    )
+    return bytes(out)
+
+def generate_compact_mess_pdf(group_name: str, group_id: str, month_label: str, records: list, purchases: list, total_meals: float, member_meals: dict) -> bytes:
+    """
+    Compiles the entire Monthly Mess Chart + Expenditure Summary + Purchase Logs into a <10 KB PDF.
+    """
+    total_spent = sum(float(p.get("amount", 0.0)) for p in purchases)
+    per_meal_rate = (total_spent / total_meals) if total_meals > 0 else 0.0
+
+    all_lines = []
+    all_lines.append("=" * 92)
+    all_lines.append(f"HOSTEL MESS PORTAL - OFFICIAL MONTHLY ARCHIVE REPORT")
+    all_lines.append(f"Group: {group_name} ({group_id}) | Month Period: {month_label}")
+    all_lines.append(f"Generated On: {now_str()}")
+    all_lines.append("=" * 92)
+    all_lines.append(
+        f"TOTAL EXPENDITURE: Rs.{total_spent:,.0f} | TOTAL MEALS: {total_meals:.1f} | PER-MEAL RATE: Rs.{per_meal_rate:.2f}"
+    )
+    all_lines.append("-" * 92)
+    all_lines.append("1. MEMBER SETTLEMENT SUMMARY")
+    all_lines.append(f"{'Member Name':<22} {'Meals':>8} {'Bought(Rs)':>14} {'Eaten(Rs)':>14} {'Net Bal(Rs)':>14} {'Status':>12}")
+    all_lines.append("-" * 92)
+
+    member_bought = {m: 0.0 for m in member_meals}
+    for p in purchases:
+        b = p.get("buyer", "")
+        if b in member_bought:
+            member_bought[b] += float(p.get("amount", 0.0))
+
+    for member, m_cnt in member_meals.items():
+        bought = member_bought.get(member, 0.0)
+        eaten = m_cnt * per_meal_rate
+        net = bought - eaten
+        status = "Refund Due" if net >= 0 else "To Pay"
+        all_lines.append(
+            f"{member[:21]:<22} {m_cnt:>8.1f} {bought:>14.0f} {eaten:>14.2f} {net:>+14.2f} {status:>12}"
+        )
+
+    all_lines.append("=" * 92)
+    all_lines.append("2. MESS MEAL CHART (DAYS 1 TO 31)")
+    day_hdr = "Member       Meal   " + "".join(f"{d:>2}" for d in DAYS)
+    all_lines.append(day_hdr)
+    all_lines.append("-" * 92)
+
+    for rec in records:
+        m_name = rec.get("name", "").strip()
+        if not m_name:
+            continue
+        meals_map = rec.get("meals", {})
+        for meal_type in MEALS:
+            row_cells = []
+            for d in DAYS:
+                val = str(meals_map.get(meal_type, {}).get(d, "")).strip()
+                if not val:
+                    val = "."
+                row_cells.append(f"{val[:2]:>2}")
+            all_lines.append(f"{m_name[:12]:<12} {meal_type[:6]:<6} " + "".join(row_cells))
+        all_lines.append("-" * 92)
+
+    all_lines.append("3. GROCERY PURCHASE & EXPENDITURE LOG")
+    all_lines.append(f"{'Date':<12} {'Buyer':<20} {'Item Description':<42} {'Amount(Rs)':>14}")
+    all_lines.append("-" * 92)
+    if purchases:
+        for p in purchases:
+            dt = str(p.get("date", ""))[:10]
+            by = str(p.get("buyer", ""))[:19]
+            it = str(p.get("item", ""))[:41]
+            am = float(p.get("amount", 0.0))
+            all_lines.append(f"{dt:<12} {by:<20} {it:<42} {am:>14.0f}")
+    else:
+        all_lines.append("No purchases recorded in this month cycle.")
+    all_lines.append("=" * 92)
+
+    # Paginate at 72 lines per page
+    pages = [all_lines[i:i + 72] for i in range(0, len(all_lines), 72)]
+    pdf_bytes = _build_compressed_pdf_from_pages(pages)
+
+    # Guarantee < 10 KB (10,240 bytes) even if there are hundreds of purchase rows
+    if len(pdf_bytes) > 10000 and len(pages) > 1:
+        trimmed_lines = all_lines[:125] + ["... [Truncated to strictly enforce <10KB PDF archive limit] ..."]
+        pages = [trimmed_lines[i:i + 72] for i in range(0, len(trimmed_lines), 72)]
+        pdf_bytes = _build_compressed_pdf_from_pages(pages)
+
+    return pdf_bytes
+
+def trigger_local_pdf_download(pdf_bytes: bytes, filename: str):
+    """Automatically triggers a local browser download of the PDF file onto the user's device."""
+    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    dl_html = f"""
+    <html>
+    <body>
+        <a id="auto_pdf_dl" href="data:application/pdf;base64,{b64}" download="{filename}"></a>
+        <script>
+            document.getElementById('auto_pdf_dl').click();
+        </script>
+    </body>
+    </html>
+    """
+    components.html(dl_html, height=0, width=0)
 
 # ----------------- HIGH-SPEED PERSISTENT CONNECTION POOL -----------------
 @st.cache_resource
@@ -162,138 +358,264 @@ def db_batch_upsert_meals(rows):
 @st.cache_resource
 def init_db_once():
     """Runs ONLY ONCE when the server starts instead of every button click."""
+    serial_type = "SERIAL PRIMARY KEY" if IS_CLOUD_DB else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    schema_sql = f"""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            full_name TEXT NOT NULL,
+            password_hash TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS mess_groups (
+            group_id TEXT PRIMARY KEY,
+            group_name TEXT NOT NULL,
+            max_members INTEGER NOT NULL,
+            owner_id TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS group_memberships (
+            group_id TEXT,
+            user_id TEXT,
+            status TEXT NOT NULL,
+            slot_id INTEGER,
+            joined_at TEXT,
+            PRIMARY KEY (group_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS group_slots (
+            group_id TEXT,
+            slot_id INTEGER,
+            name TEXT NOT NULL,
+            PRIMARY KEY (group_id, slot_id)
+        );
+        CREATE TABLE IF NOT EXISTS meal_records (
+            group_id TEXT,
+            slot_id INTEGER,
+            meal_type TEXT,
+            day TEXT,
+            val TEXT,
+            PRIMARY KEY (group_id, slot_id, meal_type, day)
+        );
+        CREATE TABLE IF NOT EXISTS purchases (
+            id {serial_type},
+            group_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            item TEXT NOT NULL,
+            buyer TEXT NOT NULL,
+            amount REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS activity_logs (
+            id {serial_type},
+            group_id TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            actor_name TEXT NOT NULL,
+            actor_id TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            details TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS group_months (
+            id {serial_type},
+            group_id TEXT NOT NULL,
+            cycle_key TEXT NOT NULL,
+            start_month TEXT NOT NULL,
+            start_year INTEGER NOT NULL,
+            display_label TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (group_id, cycle_key)
+        );
+        CREATE TABLE IF NOT EXISTS monthly_pdf_archives (
+            id {serial_type},
+            group_id TEXT NOT NULL,
+            month_label TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            pdf_b64 TEXT NOT NULL,
+            archived_at TEXT NOT NULL,
+            archived_by TEXT NOT NULL
+        );
+    """
     if IS_CLOUD_DB:
         pg_pool = get_pg_pool()
         conn = pg_pool.getconn()
         try:
             with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        user_id TEXT PRIMARY KEY,
-                        full_name TEXT NOT NULL,
-                        password_hash TEXT NOT NULL
-                    );
-                    CREATE TABLE IF NOT EXISTS mess_groups (
-                        group_id TEXT PRIMARY KEY,
-                        group_name TEXT NOT NULL,
-                        max_members INTEGER NOT NULL,
-                        owner_id TEXT NOT NULL
-                    );
-                    CREATE TABLE IF NOT EXISTS group_memberships (
-                        group_id TEXT,
-                        user_id TEXT,
-                        status TEXT NOT NULL,
-                        slot_id INTEGER,
-                        joined_at TEXT,
-                        PRIMARY KEY (group_id, user_id)
-                    );
-                    CREATE TABLE IF NOT EXISTS group_slots (
-                        group_id TEXT,
-                        slot_id INTEGER,
-                        name TEXT NOT NULL,
-                        PRIMARY KEY (group_id, slot_id)
-                    );
-                    CREATE TABLE IF NOT EXISTS meal_records (
-                        group_id TEXT,
-                        slot_id INTEGER,
-                        meal_type TEXT,
-                        day TEXT,
-                        val TEXT,
-                        PRIMARY KEY (group_id, slot_id, meal_type, day)
-                    );
-                    CREATE TABLE IF NOT EXISTS purchases (
-                        id SERIAL PRIMARY KEY,
-                        group_id TEXT NOT NULL,
-                        date TEXT NOT NULL,
-                        item TEXT NOT NULL,
-                        buyer TEXT NOT NULL,
-                        amount REAL NOT NULL
-                    );
-                    CREATE TABLE IF NOT EXISTS activity_logs (
-                        id SERIAL PRIMARY KEY,
-                        group_id TEXT NOT NULL,
-                        timestamp TEXT NOT NULL,
-                        actor_name TEXT NOT NULL,
-                        actor_id TEXT NOT NULL,
-                        action_type TEXT NOT NULL,
-                        details TEXT NOT NULL
-                    );
-                """)
+                cur.execute(schema_sql)
             conn.commit()
         finally:
             pg_pool.putconn(conn)
     else:
         conn = get_sqlite_conn()
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id TEXT PRIMARY KEY,
-                full_name TEXT NOT NULL,
-                password_hash TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS mess_groups (
-                group_id TEXT PRIMARY KEY,
-                group_name TEXT NOT NULL,
-                max_members INTEGER NOT NULL,
-                owner_id TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS group_memberships (
-                group_id TEXT,
-                user_id TEXT,
-                status TEXT NOT NULL,
-                slot_id INTEGER,
-                joined_at TEXT,
-                PRIMARY KEY (group_id, user_id)
-            );
-            CREATE TABLE IF NOT EXISTS group_slots (
-                group_id TEXT,
-                slot_id INTEGER,
-                name TEXT NOT NULL,
-                PRIMARY KEY (group_id, slot_id)
-            );
-            CREATE TABLE IF NOT EXISTS meal_records (
-                group_id TEXT,
-                slot_id INTEGER,
-                meal_type TEXT,
-                day TEXT,
-                val TEXT,
-                PRIMARY KEY (group_id, slot_id, meal_type, day)
-            );
-            CREATE TABLE IF NOT EXISTS purchases (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                group_id TEXT NOT NULL,
-                date TEXT NOT NULL,
-                item TEXT NOT NULL,
-                buyer TEXT NOT NULL,
-                amount REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS activity_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                group_id TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                actor_name TEXT NOT NULL,
-                actor_id TEXT NOT NULL,
-                action_type TEXT NOT NULL,
-                details TEXT NOT NULL
-            );
-        """)
+        conn.executescript(schema_sql)
         conn.commit()
     return True
 
 init_db_once()
 
+# ----------------- MONTHLY CYCLE & PDF ARCHIVE ENGINE -----------------
+def scope_gid(group_id: str, cycle_key: str) -> str:
+    """Returns the database key for a specific month cycle ('GROUPID' for initial, 'GROUPID__M2' for next)."""
+    return group_id if (not cycle_key or cycle_key == "INITIAL") else f"{group_id}__{cycle_key}"
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_group_Open_months(group_id: str):
+    rows = db_query(
+        "SELECT id, group_id, cycle_key, start_month, start_year, display_label, status, created_at FROM group_months WHERE group_id = ? ORDER BY id ASC",
+        (group_id,),
+        fetch="all"
+    )
+    if not rows:
+        now = datetime.now()
+        m_name = now.strftime("%B")
+        y_num = now.year
+        label = f"{m_name} {y_num}"
+        db_query(
+            "INSERT INTO group_months (group_id, cycle_key, start_month, start_year, display_label, status, created_at) VALUES (?, 'INITIAL', ?, ?, ?, 'ACTIVE', ?)",
+            (group_id, m_name, y_num, label, now_str())
+        )
+        rows = db_query(
+            "SELECT id, group_id, cycle_key, start_month, start_year, display_label, status, created_at FROM group_months WHERE group_id = ? ORDER BY id ASC",
+            (group_id,),
+            fetch="all"
+        )
+    return rows
+
+def create_new_month_cycle(group_id: str, start_month: str, start_year: int, owner_name: str, owner_id: str):
+    """
+    Creates the new month cycle FIRST before allowing the previous month to be deleted.
+    If any older previous month still exists, it is purged so only 1 previous month + 1 active month exist.
+    """
+    months = get_group_Open_months(group_id)
+    prev_months = [m for m in months if m["status"] == "PREVIOUS"]
+
+    # Enforce rule: database only holds current active month + at most 1 previous month before deletion
+    for old_pm in prev_months:
+        old_sgid = scope_gid(group_id, old_pm["cycle_key"])
+        db_query("DELETE FROM meal_records WHERE group_id = ?", (old_sgid,))
+        db_query("DELETE FROM purchases WHERE group_id = ?", (old_sgid,))
+        db_query("DELETE FROM activity_logs WHERE group_id = ?", (old_sgid,))
+        db_query("DELETE FROM group_months WHERE id = ?", (old_pm["id"],))
+        st.session_state.pop(f"local_chart_cache_{old_sgid}", None)
+
+    # Mark current ACTIVE month as PREVIOUS
+    db_query("UPDATE group_months SET status = 'PREVIOUS' WHERE group_id = ? AND status = 'ACTIVE'", (group_id,))
+
+    new_cycle_key = f"M{uuid.uuid4().hex[:6].upper()}"
+    new_label = f"{start_month} {int(start_year)}"
+    db_query(
+        "INSERT INTO group_months (group_id, cycle_key, start_month, start_year, display_label, status, created_at) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?)",
+        (group_id, new_cycle_key, start_month, int(start_year), new_label, now_str())
+    )
+
+    # Initialize fresh 1-31 meal sheet for the new month cycle
+    grp = get_group_details(group_id)
+    max_members = grp["max_members"] if grp else 5
+    new_sgid = scope_gid(group_id, new_cycle_key)
+
+    meal_rows = []
+    for i in range(int(max_members)):
+        for m in MEALS:
+            default_val = "x" if m == "Nasta" else ""
+            for d in DAYS:
+                meal_rows.append((new_sgid, i, m, d, default_val))
+    db_batch_upsert_meals(meal_rows)
+
+    log_activity(new_sgid, owner_name, owner_id, "GROUP_ADMIN", {
+        "summary": f"Created New Month Cycle: {new_label}",
+        "info": f"Previous month moved to pending archive/deletion state."
+    })
+    st.cache_data.clear()
+    return new_cycle_key, new_label
+
+def archive_and_delete_previous_month(group_id: str, group_name: str, prev_month_row: dict, active_month_row: dict, owner_name: str, owner_id: str):
+    """
+    1. Generates a <10KB PDF of the previous month's Meal Chart & Mess Expenditure.
+    2. Stores the <10KB PDF in the database (monthly_pdf_archives).
+    3. Deletes all previous month raw data from meal_records, purchases, and activity_logs
+       so the database ONLY stores the current active month's live data + compact PDF archives.
+    """
+    prev_sgid = scope_gid(group_id, prev_month_row["cycle_key"])
+    active_sgid = scope_gid(group_id, active_month_row["cycle_key"])
+
+    prev_records = load_meal_records(group_id, prev_month_row["cycle_key"])
+    prev_purchases = load_purchases(prev_sgid)
+    total_meals, member_meals = calculate_member_meals(prev_records)
+
+    final_month_label = get_dynamic_month_label(
+        prev_month_row["start_month"],
+        int(prev_month_row["start_year"]),
+        prev_purchases,
+        is_active=False
+    )
+
+    pdf_bytes = generate_compact_mess_pdf(
+        group_name=group_name,
+        group_id=group_id,
+        month_label=final_month_label,
+        records=prev_records,
+        purchases=prev_purchases,
+        total_meals=total_meals,
+        member_meals=member_meals
+    )
+    size_bytes = len(pdf_bytes)
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    safe_label = final_month_label.replace(" ", "_").replace("-", "_")
+    file_name = f"Mess_Archive_{group_id}_{safe_label}.pdf"
+
+    # Store compact PDF in database
+    db_query(
+        """
+        INSERT INTO monthly_pdf_archives (group_id, month_label, file_name, size_bytes, pdf_b64, archived_at, archived_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (group_id, final_month_label, file_name, size_bytes, pdf_b64, now_str(), owner_name)
+    )
+
+    # Erase ALL raw data from previous month & any older orphaned cycles (keeping ONLY active_sgid)
+    db_query(
+        "DELETE FROM meal_records WHERE (group_id = ? OR group_id LIKE ?) AND group_id != ?",
+        (group_id, f"{group_id}__%", active_sgid)
+    )
+    db_query(
+        "DELETE FROM purchases WHERE (group_id = ? OR group_id LIKE ?) AND group_id != ?",
+        (group_id, f"{group_id}__%", active_sgid)
+    )
+    db_query(
+        "DELETE FROM activity_logs WHERE (group_id = ? OR group_id LIKE ?) AND group_id != ?",
+        (group_id, f"{group_id}__%", active_sgid)
+    )
+    db_query(
+        "DELETE FROM group_months WHERE group_id = ? AND id != ?",
+        (group_id, active_month_row["id"])
+    )
+
+    st.session_state.pop(f"local_chart_cache_{prev_sgid}", None)
+
+    log_activity(active_sgid, owner_name, owner_id, "GROUP_ADMIN", {
+        "summary": f"Archived & Deleted Previous Month ({final_month_label})",
+        "info": f"Saved PDF ({size_bytes / 1024:.2f} KB) to database & local device; purged old raw records."
+    })
+    st.cache_data.clear()
+    return pdf_bytes, file_name, size_bytes, final_month_label
+
+@st.cache_data(ttl=120, show_spinner=False)
+def load_pdf_archives(group_id: str):
+    return db_query(
+        "SELECT id, group_id, month_label, file_name, size_bytes, pdf_b64, archived_at, archived_by FROM monthly_pdf_archives WHERE group_id = ? ORDER BY id DESC",
+        (group_id,),
+        fetch="all"
+    )
+
 # ----------------- AUDIT LOGGING HELPER -----------------
-def log_activity(group_id: str, actor_name: str, actor_id: str, action_type: str, details_obj):
+def log_activity(scoped_group_id: str, actor_name: str, actor_id: str, action_type: str, details_obj):
     details_str = json.dumps(details_obj) if isinstance(details_obj, (dict, list)) else str(details_obj)
     db_query(
         "INSERT INTO activity_logs (group_id, timestamp, actor_name, actor_id, action_type, details) VALUES (?, ?, ?, ?, ?, ?)",
-        (group_id, now_str(), actor_name, actor_id, action_type, details_str)
+        (scoped_group_id, now_str(), actor_name, actor_id, action_type, details_str)
     )
 
 @st.cache_data(ttl=120, show_spinner=False)
-def load_activity_logs(group_id: str):
+def load_activity_logs(scoped_group_id: str):
     return db_query(
         "SELECT id, timestamp, actor_name, actor_id, action_type, details FROM activity_logs WHERE group_id = ? ORDER BY id DESC",
-        (group_id,),
+        (scoped_group_id,),
         fetch="all"
     )
 
@@ -347,10 +669,12 @@ def change_user_password(user_id: str, current_pwd: str, new_pwd: str):
     return True, "**Password updated successfully!**"
 
 def delete_entire_group(group_id: str):
-    db_query("DELETE FROM meal_records WHERE group_id = ?", (group_id,))
+    db_query("DELETE FROM meal_records WHERE group_id = ? OR group_id LIKE ?", (group_id, f"{group_id}__%"))
     db_query("DELETE FROM group_slots WHERE group_id = ?", (group_id,))
-    db_query("DELETE FROM purchases WHERE group_id = ?", (group_id,))
-    db_query("DELETE FROM activity_logs WHERE group_id = ?", (group_id,))
+    db_query("DELETE FROM purchases WHERE group_id = ? OR group_id LIKE ?", (group_id, f"{group_id}__%"))
+    db_query("DELETE FROM activity_logs WHERE group_id = ? OR group_id LIKE ?", (group_id, f"{group_id}__%"))
+    db_query("DELETE FROM group_months WHERE group_id = ?", (group_id,))
+    db_query("DELETE FROM monthly_pdf_archives WHERE group_id = ?", (group_id,))
     db_query("DELETE FROM group_memberships WHERE group_id = ?", (group_id,))
     db_query("DELETE FROM mess_groups WHERE group_id = ?", (group_id,))
     st.session_state.pop(f"local_chart_cache_{group_id}", None)
@@ -358,7 +682,11 @@ def delete_entire_group(group_id: str):
 
 def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_name: str):
     group_id = uuid.uuid4().hex[:8].upper()
-    ts = datetime.now().isoformat()
+    now = datetime.now()
+    ts = now.isoformat()
+    start_m = now.strftime("%B")
+    start_y = now.year
+
     db_query(
         "INSERT INTO mess_groups (group_id, group_name, max_members, owner_id) VALUES (?, ?, ?, ?)",
         (group_id, group_name.strip(), int(max_members), owner_id)
@@ -366,6 +694,10 @@ def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_na
     db_query(
         "INSERT INTO group_memberships (group_id, user_id, status, slot_id, joined_at) VALUES (?, ?, 'APPROVED', 0, ?)",
         (group_id, owner_id, ts)
+    )
+    db_query(
+        "INSERT INTO group_months (group_id, cycle_key, start_month, start_year, display_label, status, created_at) VALUES (?, 'INITIAL', ?, ?, ?, 'ACTIVE', ?)",
+        (group_id, start_m, start_y, f"{start_m} {start_y}", now_str())
     )
 
     meal_rows = []
@@ -383,7 +715,7 @@ def create_mess_group(group_name: str, max_members: int, owner_id: str, owner_na
     db_batch_upsert_meals(meal_rows)
 
     log_activity(group_id, owner_name, owner_id, "GROUP_ADMIN", {
-        "summary": f"Created group '{group_name.strip()}' ({max_members} slots)",
+        "summary": f"Created group '{group_name.strip()}' ({max_members} slots) — Month: {start_m} {start_y}",
         "info": f"Group Owner: {owner_name} (@{owner_id})"
     })
     st.cache_data.clear()
@@ -476,7 +808,9 @@ def approve_member(group_id: str, target_user_id: str, target_full_name: str, ow
         "summary": f"Approved {target_full_name} into Slot #{assigned_slot + 1}",
         "info": f"Member @{target_user_id} approved by {owner_name}."
     })
-    st.session_state.pop(f"local_chart_cache_{group_id}", None)
+    for k in list(st.session_state.keys()):
+        if k.startswith(f"local_chart_cache_{group_id}"):
+            st.session_state.pop(k, None)
     st.cache_data.clear()
     return True, f"**Approved {target_full_name} (Assigned to Slot #{assigned_slot + 1})**"
 
@@ -490,17 +824,17 @@ def reject_member(group_id: str, target_user_id: str, target_full_name: str, own
 
 # ----------------- INSTANT CACHED MEAL & EXPENSE OPERATIONS -----------------
 @st.cache_data(ttl=120, show_spinner=False)
-def _fetch_meal_records_from_db(group_id: str):
-    slots = db_query("SELECT slot_id FROM group_slots WHERE group_id = ? ORDER BY slot_id ASC", (group_id,), fetch="all")
+def _fetch_meal_records_from_db(base_group_id: str, scoped_group_id: str):
+    slots = db_query("SELECT slot_id FROM group_slots WHERE group_id = ? ORDER BY slot_id ASC", (base_group_id,), fetch="all")
     approved_holders = db_query("""
         SELECT m.slot_id, u.full_name
         FROM group_memberships m
         JOIN users u ON m.user_id = u.user_id
         WHERE m.group_id = ? AND m.status = 'APPROVED' AND m.slot_id IS NOT NULL
-    """, (group_id,), fetch="all")
+    """, (base_group_id,), fetch="all")
     holder_by_slot = {r["slot_id"]: r["full_name"].strip() for r in approved_holders}
 
-    all_meals = db_query("SELECT slot_id, meal_type, day, val FROM meal_records WHERE group_id = ?", (group_id,), fetch="all")
+    all_meals = db_query("SELECT slot_id, meal_type, day, val FROM meal_records WHERE group_id = ?", (scoped_group_id,), fetch="all")
     meal_lookup = {(r["slot_id"], r["meal_type"], r["day"]): r["val"] for r in all_meals}
 
     records = []
@@ -517,18 +851,19 @@ def _fetch_meal_records_from_db(group_id: str):
         records.append({"name": locked_account_name, "meals": meals_dict})
     return records
 
-def load_meal_records(group_id: str):
-    cache_key = f"local_chart_cache_{group_id}"
+def load_meal_records(base_group_id: str, cycle_key: str = "INITIAL"):
+    sgid = scope_gid(base_group_id, cycle_key)
+    cache_key = f"local_chart_cache_{sgid}"
     if cache_key in st.session_state:
         return st.session_state[cache_key]
-    records = _fetch_meal_records_from_db(group_id)
+    records = _fetch_meal_records_from_db(base_group_id, sgid)
     st.session_state[cache_key] = records
     return records
 
-def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_name: str, actor_id: str):
+def save_meal_records_with_audit(scoped_group_id: str, old_records, new_records, actor_name: str, actor_id: str):
     structured_changes = []
     batch_rows = []
-    cache_key = f"local_chart_cache_{group_id}"
+    cache_key = f"local_chart_cache_{scoped_group_id}"
 
     for slot_id, new_rec in enumerate(new_records):
         if slot_id >= len(old_records):
@@ -559,14 +894,14 @@ def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_
                         "old": old_val if old_val != "" else "(blank)",
                         "new": new_val if new_val != "" else "(blank)"
                     })
-                    batch_rows.append((group_id, slot_id, meal, d, new_val))
+                    batch_rows.append((scoped_group_id, slot_id, meal, d, new_val))
 
     if batch_rows:
         st.session_state[cache_key] = new_records
         db_batch_upsert_meals(batch_rows)
         affected_members = list(dict.fromkeys(c["member"] for c in structured_changes))
         short_summary = f"Updated {len(structured_changes)} chart cell(s) ({', '.join(affected_members[:2])})"
-        log_activity(group_id, actor_name, actor_id, "MEAL_UPDATE", {
+        log_activity(scoped_group_id, actor_name, actor_id, "MEAL_UPDATE", {
             "summary": short_summary,
             "changes": structured_changes
         })
@@ -576,16 +911,16 @@ def save_meal_records_with_audit(group_id: str, old_records, new_records, actor_
     return len(structured_changes)
 
 @st.cache_data(ttl=120, show_spinner=False)
-def load_purchases(group_id: str):
-    return db_query("SELECT id, date, item, buyer, amount FROM purchases WHERE group_id = ? ORDER BY id ASC", (group_id,), fetch="all")
+def load_purchases(scoped_group_id: str):
+    return db_query("SELECT id, date, item, buyer, amount FROM purchases WHERE group_id = ? ORDER BY id ASC", (scoped_group_id,), fetch="all")
 
-def add_purchase(group_id: str, date_str: str, item: str, buyer: str, amount: int, actor_name: str, actor_id: str):
+def add_purchase(scoped_group_id: str, date_str: str, item: str, buyer: str, amount: int, actor_name: str, actor_id: str):
     db_query(
         "INSERT INTO purchases (group_id, date, item, buyer, amount) VALUES (?, ?, ?, ?, ?)",
-        (group_id, date_str, item, buyer, float(amount))
+        (scoped_group_id, date_str, item, buyer, float(amount))
     )
     log_activity(
-        group_id, actor_name, actor_id, "EXPENSE_ADD",
+        scoped_group_id, actor_name, actor_id, "EXPENSE_ADD",
         {
             "summary": f"Added ₹{int(amount):,} for {item}",
             "item": item,
@@ -597,16 +932,16 @@ def add_purchase(group_id: str, date_str: str, item: str, buyer: str, amount: in
     load_purchases.clear()
     load_activity_logs.clear()
 
-def delete_last_purchase(group_id: str, actor_name: str, actor_id: str):
+def delete_last_purchase(scoped_group_id: str, actor_name: str, actor_id: str):
     last_row = db_query(
         "SELECT id, date, item, buyer, amount FROM purchases WHERE group_id = ? ORDER BY id DESC LIMIT 1",
-        (group_id,),
+        (scoped_group_id,),
         fetch="one"
     )
     if last_row:
         db_query("DELETE FROM purchases WHERE id = ?", (last_row["id"],))
         log_activity(
-            group_id, actor_name, actor_id, "EXPENSE_DELETE",
+            scoped_group_id, actor_name, actor_id, "EXPENSE_DELETE",
             {
                 "summary": f"Deleted ₹{int(float(last_row['amount'])):,} ({last_row['item']})",
                 "item": last_row["item"],
@@ -681,6 +1016,7 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
                     else:
                         if st.button(f"**Switch to {g['group_name']} {role_label}**", key=f"prof_sw_{g['group_id']}", use_container_width=True):
                             st.session_state.active_group_id = g["group_id"]
+                            st.session_state.selected_cycle_key = None
                             st.session_state.show_group_lobby = False
                             st.session_state.delete_grp_step = 0
                             st.session_state.current_view = "HOME"
@@ -697,7 +1033,9 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
 
         if st.button("**Sync Latest Cloud Data**", use_container_width=True):
             if active_gid:
-                st.session_state.pop(f"local_chart_cache_{active_gid}", None)
+                for k in list(st.session_state.keys()):
+                    if k.startswith(f"local_chart_cache_{active_gid}"):
+                        st.session_state.pop(k, None)
             st.cache_data.clear()
             st.rerun()
 
@@ -763,6 +1101,7 @@ def render_profile_popover(current_user, user_groups, active_gid, active_group_i
         if st.button("**Logout**", use_container_width=True, type="secondary"):
             st.session_state.user = None
             st.session_state.active_group_id = None
+            st.session_state.selected_cycle_key = None
             st.session_state.show_group_lobby = False
             st.session_state.confirm_delete_expense = False
             st.session_state.delete_grp_step = 0
@@ -773,6 +1112,8 @@ if "user" not in st.session_state:
     st.session_state.user = None
 if "active_group_id" not in st.session_state:
     st.session_state.active_group_id = None
+if "selected_cycle_key" not in st.session_state:
+    st.session_state.selected_cycle_key = None
 if "show_group_lobby" not in st.session_state:
     st.session_state.show_group_lobby = False
 if "current_view" not in st.session_state:
@@ -783,8 +1124,16 @@ if "selected_log_id" not in st.session_state:
     st.session_state.selected_log_id = None
 if "delete_grp_step" not in st.session_state:
     st.session_state.delete_grp_step = 0
+if "pending_auto_pdf" not in st.session_state:
+    st.session_state.pending_auto_pdf = None
 
 invite_code_param = st.query_params.get("join", "").strip().upper()
+
+# Trigger automatic local PDF download if an archive just completed
+if st.session_state.pending_auto_pdf:
+    pdf_info = st.session_state.pending_auto_pdf
+    trigger_local_pdf_download(pdf_info["bytes"], pdf_info["filename"])
+    st.session_state.pending_auto_pdf = None
 
 # ==============================================================================
 # PHASE 1: AUTHENTICATION
@@ -881,6 +1230,7 @@ if st.session_state.active_group_id is None or st.session_state.show_group_lobby
                 if g_name.strip():
                     new_gid = create_mess_group(g_name, g_max, current_user["user_id"], current_user["full_name"])
                     st.session_state.active_group_id = new_gid
+                    st.session_state.selected_cycle_key = None
                     st.session_state.show_group_lobby = False
                     st.session_state.current_view = "HOME"
                     st.rerun()
@@ -904,7 +1254,7 @@ if st.session_state.active_group_id is None or st.session_state.show_group_lobby
     st.stop()
 
 # ==============================================================================
-# PHASE 3: ACTIVE GROUP FRONT PAGE
+# PHASE 3: ACTIVE GROUP FRONT PAGE & MONTHLY CYCLE ENGINE
 # ==============================================================================
 active_gid = st.session_state.active_group_id
 group_info = get_group_details(active_gid)
@@ -914,12 +1264,34 @@ if not group_info:
 
 is_owner = (group_info["owner_id"] == current_user["user_id"])
 
+# Load open monthly cycles (Current Active Month + optional 1 Previous Month awaiting archive/delete)
+open_months = get_group_Open_months(active_gid)
+active_month_row = next((m for m in open_months if m["status"] == "ACTIVE"), open_months[-1])
+prev_month_row = next((m for m in open_months if m["status"] == "PREVIOUS"), None)
+
+if st.session_state.selected_cycle_key not in [m["cycle_key"] for m in open_months]:
+    st.session_state.selected_cycle_key = active_month_row["cycle_key"]
+
+selected_month_row = next((m for m in open_months if m["cycle_key"] == st.session_state.selected_cycle_key), active_month_row)
+current_scoped_gid = scope_gid(active_gid, selected_month_row["cycle_key"])
+current_purchases_for_label = load_purchases(current_scoped_gid)
+
+# Automatically compute dynamic month label (e.g. "November 2026" or "November - December 2026")
+live_month_denotation = get_dynamic_month_label(
+    selected_month_row["start_month"],
+    int(selected_month_row["start_year"]),
+    current_purchases_for_label,
+    is_active=(selected_month_row["status"] == "ACTIVE")
+)
+
 if is_owner:
     hdr_left, hdr_share, hdr_profile = st.columns([6, 2, 2])
     with hdr_left:
         st.markdown(
             f"<h2 style='margin:0;'><b>{group_info['group_name']}</b> "
-            f"<span style='font-size:15px; color:#94a3b8; font-weight:bold;'>(Owner)</span></h2>",
+            f"<span style='font-size:15px; color:#94a3b8; font-weight:bold;'>(Owner)</span></h2>"
+            f"<div style='margin-top:4px;'><span style='background:#1e3a8a; color:#f8fafc; padding:4px 12px; border-radius:6px; font-weight:800; font-size:14px;'>"
+            f"📊 MONTH CYCLE: {live_month_denotation.upper()} ({selected_month_row['status']})</span></div>",
             unsafe_allow_html=True
         )
     with hdr_share:
@@ -935,11 +1307,98 @@ else:
     with hdr_left:
         st.markdown(
             f"<h2 style='margin:0;'><b>{group_info['group_name']}</b> "
-            f"<span style='font-size:15px; color:#94a3b8; font-weight:bold;'>(Member)</span></h2>",
+            f"<span style='font-size:15px; color:#94a3b8; font-weight:bold;'>(Member)</span></h2>"
+            f"<div style='margin-top:4px;'><span style='background:#1e3a8a; color:#f8fafc; padding:4px 12px; border-radius:6px; font-weight:800; font-size:14px;'>"
+            f"📊 MONTH CYCLE: {live_month_denotation.upper()} ({selected_month_row['status']})</span></div>",
             unsafe_allow_html=True
         )
     with hdr_profile:
         render_profile_popover(current_user, user_groups, active_gid, group_info)
+
+# ----------------- MONTH CYCLE SWITCHER & OWNER MONTHLY MANAGER -----------------
+bar_col1, bar_col2 = st.columns([6, 4])
+with bar_col1:
+    if len(open_months) > 1:
+        cycle_options = {
+            m["cycle_key"]: f"{get_dynamic_month_label(m['start_month'], int(m['start_year']), load_purchases(scope_gid(active_gid, m['cycle_key'])), m['status']=='ACTIVE')} [{m['status']}]"
+            for m in open_months
+        }
+        chosen_ck = st.radio(
+            "**Select Active or Previous Month Sheet:**",
+            options=list(cycle_options.keys()),
+            format_func=lambda k: f"**{cycle_options[k]}**",
+            index=list(cycle_options.keys()).index(st.session_state.selected_cycle_key),
+            horizontal=True
+        )
+        if chosen_ck != st.session_state.selected_cycle_key:
+            st.session_state.selected_cycle_key = chosen_ck
+            st.rerun()
+
+with bar_col2:
+    if is_owner:
+        with st.expander("📊 **Owner Monthly Cycle & PDF Archive Manager**", expanded=False):
+            st.markdown("**Rule:** Create the **New Month** first. Once created, you can archive (`<10 KB` PDF) and delete the **Previous Month**.")
+            all_month_names = [
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            ]
+            curr_idx = all_month_names.index(active_month_row["start_month"]) if active_month_row["start_month"] in all_month_names else datetime.now().month - 1
+            default_next_idx = (curr_idx + 1) % 12
+            default_next_year = int(active_month_row["start_year"]) + (1 if default_next_idx == 0 else 0)
+
+            st.markdown("#### **Step 1: Create New Month**")
+            with st.form("create_new_month_form", clear_on_submit=True):
+                cm1, cm2 = st.columns(2)
+                with cm1:
+                    next_m_name = st.selectbox("**New Month**", all_month_names, index=default_next_idx)
+                with cm2:
+                    next_y_num = st.number_input("**Year**", min_value=2024, max_value=2100, value=default_next_year, step=1)
+                owner_pwd_create = st.text_input("**Owner Password (Required to Create New Month)**", type="password")
+                if st.form_submit_button("✅ **Create New Month Cycle**", use_container_width=True, type="primary"):
+                    if not verify_user_password(current_user["user_id"], owner_pwd_create):
+                        st.error("❌ **Incorrect Owner Password.**")
+                    else:
+                        new_ck, new_lbl = create_new_month_cycle(
+                            active_gid, next_m_name, int(next_y_num),
+                            current_user["full_name"], current_user["user_id"]
+                        )
+                        st.session_state.selected_cycle_key = new_ck
+                        st.toast(f"Created new month cycle: {new_lbl}", icon="✅")
+                        st.rerun()
+
+            st.divider()
+            st.markdown("#### **Step 2: Archive (<10KB PDF) & Delete Previous Month**")
+            if prev_month_row is None:
+                st.caption("⚠️ **Create a New Month in Step 1 first before deleting the current month.**")
+            else:
+                prev_label_preview = get_dynamic_month_label(
+                    prev_month_row["start_month"],
+                    int(prev_month_row["start_year"]),
+                    load_purchases(scope_gid(active_gid, prev_month_row["cycle_key"])),
+                    is_active=False
+                )
+                st.warning(
+                    f"⚠️ **Previous Month Ready for Deletion:** `{prev_label_preview}`\n\n"
+                    f"Deleting `{prev_label_preview}` will automatically compile its Meal Chart & Expenditure into a **`< 10 KB` PDF**, save the PDF in the database, download a local `.pdf` copy to your device, and erase the old month's raw database rows."
+                )
+                with st.form("delete_prev_month_form", clear_on_submit=True):
+                    owner_pwd_del = st.text_input("**Owner Password (Required to Archive & Delete Previous Month)**", type="password")
+                    if st.form_submit_button("🗑️ **Save <10KB PDF & Delete Previous Month**", use_container_width=True, type="primary"):
+                        if not verify_user_password(current_user["user_id"], owner_pwd_del):
+                            st.error("❌ **Incorrect Owner Password.**")
+                        else:
+                            pdf_bytes, fname, fsize, flabel = archive_and_delete_previous_month(
+                                active_gid,
+                                group_info["group_name"],
+                                prev_month_row,
+                                active_month_row,
+                                current_user["full_name"],
+                                current_user["user_id"]
+                            )
+                            st.session_state.selected_cycle_key = active_month_row["cycle_key"]
+                            st.session_state.pending_auto_pdf = {"bytes": pdf_bytes, "filename": fname}
+                            st.toast(f"Archived {flabel} ({fsize/1024:.2f} KB PDF) & deleted old records!", icon="🗑️")
+                            st.rerun()
 
 if is_owner:
     pending_list = get_pending_requests(active_gid)
@@ -969,10 +1428,13 @@ st.divider()
 
 # ----------------- 1. GROUP HOME VIEW -----------------
 if st.session_state.current_view == "HOME":
-    st.markdown("<h3 style='text-align: center; margin-top: 10px;'><b>MESS PORTAL DASHBOARD</b></h3>", unsafe_allow_html=True)
+    st.markdown(
+        f"<h3 style='text-align: center; margin-top: 10px;'><b>MESS PORTAL DASHBOARD — {live_month_denotation.upper()}</b></h3>",
+        unsafe_allow_html=True
+    )
     st.write("")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         if st.button("📊 **MESS MEAL CHART**", use_container_width=True, type="primary"):
             st.session_state.current_view = "MEAL_CHART"
@@ -986,17 +1448,21 @@ if st.session_state.current_view == "HOME":
         if st.button("**ACTIVITY HISTORY**", use_container_width=True):
             st.session_state.current_view = "HISTORY"
             st.rerun()
+    with col4:
+        if st.button("📑 **SAVED PDF ARCHIVES**", use_container_width=True):
+            st.session_state.current_view = "ARCHIVES"
+            st.rerun()
 
 # ----------------- 2. MESS MEAL CHART VIEW -----------------
 elif st.session_state.current_view == "MEAL_CHART":
-    group_records = load_meal_records(active_gid)
+    group_records = load_meal_records(active_gid, selected_month_row["cycle_key"])
     top1, top2 = st.columns([1, 8])
     with top1:
         if st.button("**Back**"):
             st.session_state.current_view = "HOME"
             st.rerun()
     with top2:
-        st.subheader(f"📊 **Mess Meal Chart (1 - 31) — {group_info['max_members']} Members**")
+        st.subheader(f"📊 **Mess Meal Chart ({live_month_denotation}) — {group_info['max_members']} Members**")
 
     st.caption("**NOTE: Member names are locked to registered account holders and cannot be edited.**")
 
@@ -1004,12 +1470,12 @@ elif st.session_state.current_view == "MEAL_CHART":
         records=group_records,
         days=DAYS,
         meals=MEALS,
-        key=f"mess_editor_{active_gid}"
+        key=f"mess_editor_{current_scoped_gid}"
     )
 
     if updated_records is not None and updated_records != group_records:
         num_changes = save_meal_records_with_audit(
-            active_gid,
+            current_scoped_gid,
             group_records,
             updated_records,
             current_user["full_name"],
@@ -1021,7 +1487,7 @@ elif st.session_state.current_view == "MEAL_CHART":
 
 # ----------------- 3. MESS EXPENDITURE VIEW -----------------
 elif st.session_state.current_view == "EXPENDITURE":
-    group_records = load_meal_records(active_gid)
+    group_records = load_meal_records(active_gid, selected_month_row["cycle_key"])
     top1, top2 = st.columns([1, 8])
     with top1:
         if st.button("**Back**"):
@@ -1029,9 +1495,9 @@ elif st.session_state.current_view == "EXPENDITURE":
             st.session_state.confirm_delete_expense = False
             st.rerun()
     with top2:
-        st.subheader("📈 **Mess Expenditure & Member Settlements**")
+        st.subheader(f"📈 **Mess Expenditure & Settlements ({live_month_denotation})**")
 
-    purchases = load_purchases(active_gid)
+    purchases = load_purchases(current_scoped_gid)
     total_meals, member_meals = calculate_member_meals(group_records)
     active_members = list(member_meals.keys())
 
@@ -1090,7 +1556,7 @@ elif st.session_state.current_view == "EXPENDITURE":
             if st.form_submit_button("**Add Expense**", use_container_width=True, type="primary"):
                 if p_amount is not None and p_amount > 0 and p_item.strip():
                     add_purchase(
-                        active_gid,
+                        current_scoped_gid,
                         p_date.strftime("%Y-%m-%d"),
                         p_item.strip(),
                         p_buyer,
@@ -1149,7 +1615,7 @@ elif st.session_state.current_view == "EXPENDITURE":
                 )
                 c_yes, c_no = st.columns(2)
                 if c_yes.button("⚠️ **Yes, Permanently Delete**", type="primary", use_container_width=True):
-                    delete_last_purchase(active_gid, current_user["full_name"], current_user["user_id"])
+                    delete_last_purchase(current_scoped_gid, current_user["full_name"], current_user["user_id"])
                     st.session_state.confirm_delete_expense = False
                     st.toast("Last purchase deleted & recorded in History.", icon="🗑️")
                     st.rerun()
@@ -1163,7 +1629,7 @@ elif st.session_state.current_view == "EXPENDITURE":
             st.download_button(
                 label="📊 **Export Full Purchase Log (CSV)**",
                 data=csv_data,
-                file_name=f"mess_purchases_{active_gid}.csv",
+                file_name=f"mess_purchases_{active_gid}_{live_month_denotation.replace(' ', '_')}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
@@ -1176,11 +1642,11 @@ elif st.session_state.current_view == "HISTORY":
             st.session_state.current_view = "HOME"
             st.rerun()
     with top2:
-        st.subheader("📊 **Activity History & Visual Change Inspector**")
+        st.subheader(f"📊 **Activity History & Visual Change Inspector ({live_month_denotation})**")
 
-    logs = load_activity_logs(active_gid)
+    logs = load_activity_logs(current_scoped_gid)
     if not logs:
-        st.info("**No activity recorded for this group yet.**")
+        st.info("**No activity recorded for this month cycle yet.**")
     else:
         if st.session_state.selected_log_id is None or not any(l["id"] == st.session_state.selected_log_id for l in logs):
             st.session_state.selected_log_id = logs[0]["id"]
@@ -1320,3 +1786,41 @@ elif st.session_state.current_view == "HISTORY":
 
                 else:
                     st.info(f"**{parsed_sel.get('summary', '')}**\n\n{parsed_sel.get('info', '')}")
+
+# ----------------- 5. SAVED <10KB MONTHLY PDF ARCHIVES VIEW -----------------
+elif st.session_state.current_view == "ARCHIVES":
+    top1, top2 = st.columns([1, 8])
+    with top1:
+        if st.button("**Back**"):
+            st.session_state.current_view = "HOME"
+            st.rerun()
+    with top2:
+        st.subheader("📑 **Archived Monthly PDF Statements (<10 KB Database Storage)**")
+
+    st.caption("**All deleted previous months are permanently preserved here in ultra-compact (<10 KB) PDF format.**")
+
+    archives = load_pdf_archives(active_gid)
+    if not archives:
+        st.info("**No monthly PDF archives stored yet. When the Group Owner archives and deletes a previous month, its PDF will appear here.**")
+    else:
+        for arch in archives:
+            pdf_raw_bytes = base64.b64decode(arch["pdf_b64"])
+            size_kb = arch["size_bytes"] / 1024.0
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([5, 3, 2])
+                with c1:
+                    st.markdown(f"### 📊 **{arch['month_label']}**")
+                    st.caption(f"**Archived By:** {arch['archived_by']} • **Date:** {arch['archived_at']}")
+                with c2:
+                    st.metric("**Database PDF Size**", f"{size_kb:.2f} KB")
+                with c3:
+                    st.write("")
+                    st.download_button(
+                        label="📑 **Save PDF Locally**",
+                        data=pdf_raw_bytes,
+                        file_name=arch["file_name"],
+                        mime="application/pdf",
+                        key=f"dl_arch_{arch['id']}",
+                        use_container_width=True,
+                        type="primary"
+                    )
